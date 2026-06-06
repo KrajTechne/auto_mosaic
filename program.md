@@ -1,112 +1,141 @@
-# autoresearch
+# auto_mosaic
 
-This is an experiment to have the LLM do its own research.
+You are an expert computational protein engineer. Your task is to design an optimal scaffold that correctly places two functional motifs (from chains A and D of the gopher alpha-snake toxin) and presents them to a target protein for binding.
+
+This is done via gradient-based sequence optimization using Boltz2. You tune the hyperparameters in `train.py` to minimize the composite score.
 
 ## Setup
 
 To set up a new experiment, work with the user to:
 
-1. **Agree on a run tag**: propose a tag based on today's date (e.g. `mar5`). The branch `autoresearch/<tag>` must not already exist — this is a fresh run.
-2. **Create the branch**: `git checkout -b autoresearch/<tag>` from current master.
-3. **Read the in-scope files**: The repo is small. Read these files for full context:
-   - `README.md` — repository context.
-   - `prepare.py` — fixed constants, data prep, tokenizer, dataloader, evaluation. Do not modify.
-   - `train.py` — the file you modify. Model architecture, optimizer, training loop.
-4. **Verify data exists**: Run `modal volume ls autoresearch-data` to check that data shards and a tokenizer exist on the Modal volume. If not, tell the human to run `modal run modal_train.py --prepare --num-shards 10`.
+1. **Agree on a run tag**: propose a tag based on today's date (e.g. `jun6`). The branch `auto_mosaic/<tag>` must not already exist — this is a fresh run.
+2. **Create the branch**: `git checkout -b auto_mosaic/<tag>` from current main.
+3. **Read the in-scope files**: Read these files for full context:
+   - `prepare.py` — fixed constants, motif coordinate extraction, composite score definition, evaluation. Do not modify.
+   - `train.py` — the file you modify. Linker lengths, loss function weights, optimizer hyperparameters.
+4. **Verify data exists**: Run `modal volume ls autoresearch-data` to confirm the motif coordinate `.npy` files exist on the Modal volume. If not, tell the human to run `modal run modal_train.py --prepare`.
 5. **Initialize results.tsv**: Create `results.tsv` with just the header row. The baseline will be recorded after the first run.
-6. **Confirm and go**: Confirm setup looks good.
+6. **Confirm and go**: Confirm setup looks good, then start experimenting.
 
-Once you get confirmation, kick off the experimentation.
+## The task
 
-## Experimentation
+The binder sequence is structured as:
 
-Each experiment runs on a single GPU. The training script runs for a **fixed time budget of 5 minutes** (wall clock training time, excluding startup/compilation). Training runs on Modal (remote GPU): `modal run modal_train.py`.
+```
+[LINKER1] - [MOTIF_A: LTKWTN] - [LINKER2] - [MOTIF_D: FPGER] - [LINKER3]
+```
 
-**What you CAN do:**
-- Modify `train.py` — this is the only file you edit. Everything is fair game: model architecture, optimizer, hyperparameters, training loop, batch size, model size, etc.
+The `X` linker residues are free to optimize; the motif residues are fixed. Boltz2 predicts the structure of the binder complexed with the target, and gradients flow back through the prediction to update the per-position amino acid distribution (PSSM) over 3 successive stages: soft → sharp → hard.
 
-**What you CANNOT do:**
-- Modify `prepare.py`. It is read-only. It contains the fixed evaluation, data loading, tokenizer, and training constants (time budget, sequence length, etc).
-- Install new packages or add dependencies. You can only use what's already in `pyproject.toml`.
-- Modify the evaluation harness. The `evaluate_bpb` function in `prepare.py` is the ground truth metric.
+## What you can tune in `train.py`
 
-**The goal is simple: get the lowest val_bpb.** Since the time budget is fixed, you don't need to worry about training time — it's always 5 minutes. Everything is fair game: change the architecture, the optimizer, the hyperparameters, the batch size, the model size. The only constraint is that the code runs without crashing and finishes within the time budget.
+- **Linker lengths**: `LINKER_LEN1`, `LINKER_LEN2`, `LINKER_LEN3` — controls binder length and motif spacing. Total binder length = LINKER_LEN1 + 6 + LINKER_LEN2 + 5 + LINKER_LEN3.
+- **Loss function weights**: the 11 `WEIGHT_*` constants controlling the relative contribution of each term (binder contact, PAE, iPTM, pLDDT, motif distogram, motif RMSD, etc.).
+- **Optimizer hyperparameters**: `soft_pssm_hyparams`, `sharp_pssm_hyparams`, `hard_pssm_hyparams` — each controls `n_steps`, `stepsize`, `momentum`, `scale`, and `logspace` for that stage. Total steps across all three stages must not exceed `MAX_OPTIMIZER_STEPS` (100).
+- **Motif chain order**: `MOTIF_CHAIN_ORDER` — controls which motif appears first in the binder sequence.
 
-**VRAM** is a soft constraint. Some increase is acceptable for meaningful val_bpb gains, but it should not blow up dramatically.
+## What you cannot do
 
-**Simplicity criterion**: All else being equal, simpler is better. A small improvement that adds ugly complexity is not worth it. Conversely, removing something and getting equal or better results is a great outcome — that's a simplification win. When evaluating whether to keep a change, weigh the complexity cost against the improvement magnitude. A 0.001 val_bpb improvement that adds 20 lines of hacky code? Probably not worth it. A 0.001 val_bpb improvement from deleting code? Definitely keep. An improvement of ~0 but much simpler code? Keep.
+- Modify `prepare.py`. It is read-only and contains the fixed evaluation harness and composite score definition.
+- Install new packages or add dependencies beyond what is in `pyproject.toml`.
+- Change `MAX_OPTIMIZER_STEPS` — it is defined in `prepare.py`.
 
-**The first run**: Your very first run should always be to establish the baseline, so you will run the training script as is.
+## The goal
+
+**Minimize `composite_score` (lower is better; target < 1.5).**
+
+The composite score is defined in `prepare.py` as:
+
+```
+composite_score = 2.0 * (1 - exp(-mean_motif_rmsd / 1.5))   # motif placement (primary)
+                + 1.0 * (1 - iPTM)                           # binding quality
+                + 0.5 * (1 - pLDDT)                          # fold confidence
+```
+
+A good design has:
+- Motif RMSD < 1.5 Å for both chains (motifs are correctly placed)
+- iPTM > 0.6 (confident binding to the target)
+- pLDDT > 0.7 (the binder is well-folded)
+
+**Simplicity criterion**: All else being equal, simpler is better. A 0.05 score improvement that adds complex code is not worth it. Removing a loss term and getting equal or better results is a win.
+
+**The first run**: Always establish a baseline first — run `train.py` as-is before making any changes.
 
 ## Output format
 
-Once the script finishes it prints a summary like this:
+At the end of a run, `evaluate_optimized_structure` prints:
 
 ```
----
-val_bpb:          0.997900
-training_seconds: 300.1
-total_seconds:    325.9
-peak_vram_mb:     45060.2
-mfu_percent:      39.80
-total_tokens_M:   499.6
-num_steps:        953
-num_params_M:     50.3
-depth:            8
+--------------------------------------------------
+For Design Iteration: 0
+Your selection of hyperparameters has resulted in:
+Motif From Chain: A has an associated RMSD: 1.23
+  As always, smaller RMSD is better and ideal RMSD is < 1.5 Angstroms
+Motif From Chain: D has an associated RMSD: 0.98
+  As always, smaller RMSD is better and ideal RMSD is < 1.5 Angstroms
+Structure IPTM: 0.71
+Structure PLDDT: 0.82
+Composite Score: 1.3245  (lower is better; target < 1.5)
+--------------------------------------------------
 ```
 
-Note that the script is configured to always stop after 5 minutes, so depending on the computing platform of this computer the numbers might look different. You can extract the key metric from the log file:
+Extract the key metric from the log:
 
 ```
-grep "^val_bpb:" run.log
+grep "^Composite Score:" run.log
+```
+
+For crash diagnosis:
+
+```
+tail -n 50 run.log
 ```
 
 ## Logging results
 
-When an experiment is done, log it to `results.tsv` (tab-separated, NOT comma-separated — commas break in descriptions).
-
-The TSV has a header row and 5 columns:
+Log each run to `results.tsv` (tab-separated — commas break in descriptions). Do NOT commit this file; leave it untracked.
 
 ```
-commit	val_bpb	memory_gb	status	description
+commit	composite_score	rmsd_A	rmsd_D	iptm	status	description
 ```
 
 1. git commit hash (short, 7 chars)
-2. val_bpb achieved (e.g. 1.234567) — use 0.000000 for crashes
-3. peak memory in GB, round to .1f (e.g. 12.3 — divide peak_vram_mb by 1024) — use 0.0 for crashes
-4. status: `keep`, `discard`, or `crash`
-5. short text description of what this experiment tried
+2. composite_score (e.g. 1.3245) — use 99.0000 for crashes
+3. motif RMSD for chain A (Å) — use 99.0 for crashes
+4. motif RMSD for chain D (Å) — use 99.0 for crashes
+5. iPTM — use 0.0 for crashes
+6. status: `keep`, `discard`, or `crash`
+7. short description of what this experiment tried
 
 Example:
 
 ```
-commit	val_bpb	memory_gb	status	description
-a1b2c3d	0.997900	44.0	keep	baseline
-b2c3d4e	0.993200	44.2	keep	increase LR to 0.04
-c3d4e5f	1.005000	44.0	discard	switch to GeLU activation
-d4e5f6g	0.000000	0.0	crash	double model width (OOM)
+commit	composite_score	rmsd_A	rmsd_D	iptm	status	description
+a1b2c3d	1.3245	1.23	0.98	0.71	keep	baseline
+b2c3d4e	1.1832	0.87	0.76	0.78	keep	increase motif RMSD weight to 0.3
+c3d4e5f	1.5901	2.14	1.89	0.55	discard	shorten linkers to 15-15-15
+d4e5f6g	99.0000	99.0	99.0	0.0	crash	too many optimizer steps (OOM)
 ```
 
 ## The experiment loop
 
-The experiment runs on a dedicated branch (e.g. `autoresearch/mar5` or `autoresearch/mar5-gpu0`).
+The experiment runs on a dedicated branch (e.g. `auto_mosaic/jun6`).
 
 LOOP FOREVER:
 
-1. Look at the git state: the current branch/commit we're on
-2. Tune `train.py` with an experimental idea by directly hacking the code.
-3. git commit
-4. Run the experiment: `modal run modal_train.py > run.log 2>&1` (redirect everything — do NOT use tee or let output flood your context)
-5. Read out the results: `grep "^val_bpb:\|^peak_vram_mb:" run.log`
-6. If the grep output is empty, the run crashed. Run `tail -n 50 run.log` to read the Python stack trace and attempt a fix. If you can't get things to work after more than a few attempts, give up.
-7. Record the results in the tsv (NOTE: do not commit the results.tsv file, leave it untracked by git)
-8. If val_bpb improved (lower), you "advance" the branch, keeping the git commit
-9. If val_bpb is equal or worse, you git reset back to where you started
+1. Check git state: current branch and last commit.
+2. Form a hypothesis about what to change in `train.py` and why (e.g. "motif RMSD is high — increase `WEIGHT_MOTIF_RMSD_LOSS_FUNCTION`").
+3. Edit `train.py` directly with the change.
+4. `git commit`
+5. Run: `modal run modal_train.py > run.log 2>&1` (redirect everything — do NOT let output flood your context)
+6. Read results: `grep "^Composite Score:" run.log`
+7. If grep returns nothing, the run crashed. Run `tail -n 50 run.log` to diagnose and attempt a fix. If the idea is fundamentally broken, log "crash" and move on.
+8. Record results in `results.tsv`.
+9. If composite_score improved (lower), keep the commit and advance.
+10. If equal or worse, `git reset --hard HEAD~1` to discard.
 
-The idea is that you are a completely autonomous researcher trying things out. If they work, keep. If they don't, discard. And you're advancing the branch so that you can iterate. If you feel like you're getting stuck in some way, you can rewind but you should probably do this very very sparingly (if ever).
+**Runtime**: Each run takes ~45–90 minutes on an H100 (100 total optimizer steps × ~30–60 s per Boltz2 forward/backward). The Modal timeout is 3600 s (1 hour) — if a run hits this, treat it as a crash and reduce the number of optimizer steps.
 
-**Timeout**: Each experiment should take ~5 minutes total (+ a few seconds for startup and eval overhead). If a run exceeds 10 minutes, kill it and treat it as a failure (discard and revert).
+**Crashes**: Fix obvious bugs (typos, import errors) and re-run. If the idea itself is broken, skip it.
 
-**Crashes**: If a run crashes (OOM, or a bug, or etc.), use your judgment: If it's something dumb and easy to fix (e.g. a typo, a missing import), fix it and re-run. If the idea itself is fundamentally broken, just skip it, log "crash" as the status in the tsv, and move on.
-
-**STOPPING CONDITION**: You are only authorized to run a maximum of 3 experiment loops. Once the 3rd evaluation is complete, log the final results and exit
+**STOPPING CONDITION**: You are only authorized to run a maximum of 3 experiment loops. Once the 3rd evaluation is complete, log the final results and exit.
