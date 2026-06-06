@@ -35,9 +35,10 @@ from mosaic.common import TOKENS
 #-------------------------------------------------------------------------
 # Configuration 
 #-------------------------------------------------------------------------
+MAX_OPTIMIZER_STEPS = 100
 CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "autoresearch")
 DATA_DIR = os.path.join(CACHE_DIR, "data")
-PATH_INPUT_STRUCTURE = os.path.join(DATA_DIR, "gopher_alpha_snake.pdb")
+PATH_INPUT_STRUCTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gopher_alpha_snake.pdb")
 CHAIN_MOTIF = {
     'A' : {'pos_native' : [107,108,109,110,111,112] , 'seq' : "LTKWTN"}, # (Alternate A Motif: 61-67)
     #'B' : {'pos' : [96,97,98,99,100,101,102,103,104,105], 'seq' : "TVMVVKPDRI"},
@@ -144,13 +145,13 @@ def evaluate_optimized_structure(model_boltz, seq_pssm, motif_id_pos: dict, desi
         f.write(designed_structure.make_pdb_string())
     designed_array = extract_atom_array(path_designed_structure)
     # 5. Calculate Motif RMSD for each motif
-    motif_rmsd = {}
+    motif_rmsd_dict = {}
     for motif_id, motif_res_pos in motif_id_pos.items():
         motif_coords_native_ca = np.load(os.path.join(DATA_DIR, f"motif_ca_coords_{motif_id}.npy"))
         motif_coords_designed_res_pos = motif_res_pos['pos_design']
         motif_rmsd = calculate_motif_rmsd(designed_array = designed_array, motif_res_pos = motif_coords_designed_res_pos,
                                           motif_coords_native= motif_coords_native_ca)
-        motif_rmsd[motif_id] = motif_rmsd
+        motif_rmsd_dict[motif_id] = motif_rmsd
     # 6. Calculate Structure IPTM
     structure_iptm = pred.iptm
     # 7. Calculate Structure PLDDT
@@ -159,20 +160,20 @@ def evaluate_optimized_structure(model_boltz, seq_pssm, motif_id_pos: dict, desi
     print("-" * 50)
     print(f"For Design Iteration: {design_iteration}")
     print("Your selection of hyperparameters has resulted in: ")
-    for motif_id, rmsd in motif_rmsd.items():
+    for motif_id, rmsd in motif_rmsd_dict.items():
         print(f"Motif From Chain: {motif_id} has an associated RMSD: {rmsd:.2f}")
         print("As always, smaller RMSD is better and ideal RMSD is < 1.5 Angstroms")
     print(f"Structure IPTM: {structure_iptm:.2f}")
     print(f"Structure PLDDT: {binder_plddt:.2f}")
     print("-" * 50)
-    return motif_rmsd, structure_iptm, binder_plddt
+    return motif_rmsd_dict, structure_iptm, binder_plddt
 
 #--------------------------------------------------------------------------------------------------------------------
 # Main
 #--------------------------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description = "Setup for Motif Scaffolding Gradient-Based Optimization")
-    
+    # Create main directory to store data
+    os.makedirs(DATA_DIR, exist_ok= True)
     # 1. Load in structure
     atom_array_complex = extract_atom_array(PATH_INPUT_STRUCTURE)
 
