@@ -204,10 +204,10 @@ if soft_pssm_hyparams['n_steps'] + sharp_pssm_hyparams['n_steps'] + hard_pssm_hy
 # Setup: Initial Seq Design, Load in Models (Boltz & Soluble MPNN) Define Composite Loss Function
 # -------------------------------------------------------------------------------------------------------------
 # 1. Extract motif coordinates
-motif_ca_coords_first = np.load(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[0]]['path_coords_ca'])
-motif_cb_coords_first = np.load(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[0]]['path_coords_cb'])
-motif_ca_coords_second = np.load(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[1]]['path_coords_ca'])
-motif_cb_coords_second = np.load(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[1]]['path_coords_cb'])
+motif_ca_coords_first = np.load(os.path.join(DATA_DIR, f"motif_ca_coords_{MOTIF_CHAIN_ORDER[0]}.npy"))
+motif_cb_coords_first = np.load(os.path.join(DATA_DIR, f"motif_cb_coords_{MOTIF_CHAIN_ORDER[0]}.npy"))
+motif_ca_coords_second = np.load(os.path.join(DATA_DIR, f"motif_ca_coords_{MOTIF_CHAIN_ORDER[1]}.npy"))
+motif_cb_coords_second = np.load(os.path.join(DATA_DIR, f"motif_cb_coords_{MOTIF_CHAIN_ORDER[1]}.npy"))
 
 # 2. Create motif distograms
 motif_distogram_first = coords_to_distogram(motif_cb_coords_first)
