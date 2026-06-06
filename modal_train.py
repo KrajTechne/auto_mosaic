@@ -37,7 +37,7 @@ data_volume = modal.Volume.from_name("autoresearch-data", create_if_missing=True
 cache_volume = modal.Volume.from_name("autoresearch-cache", create_if_missing=True)
 
 DATA_MOUNT = "/root/.cache/autoresearch"
-CACHE_MOUNT = "/root/.cache/torch-compile"
+CACHE_MOUNT = "/root/.cache/jax-compile"
 
 # ---------------------------------------------------------------------------
 # Image
@@ -50,14 +50,12 @@ image = (
     .run_commands("git clone https://github.com/escalante-bio/mosaic.git /mosaic")
     .workdir("/mosaic")
     .run_commands("uv pip install --system -r pyproject.toml")
-    # Added scikit-learn and biotite here as your prepare.py/train.py require them
-    .run_commands("uv pip install --system jax[cuda12] equinox scikit-learn biotite")
     .run_commands("uv pip install --system .")
+    # Install GPU JAX last so mosaic's CPU jax dependency cannot downgrade it
+    .run_commands("uv pip install --system 'jax[cuda12]' equinox scikit-learn biotite")
     .run_function(download_boltz2_mpnn)
     .env({
-        "TORCHINDUCTOR_CACHE_DIR": CACHE_MOUNT,
-        "TORCHINDUCTOR_FX_GRAPH_CACHE": "1",
-        "TORCHINDUCTOR_AUTOGRAD_CACHE": "1",
+        "JAX_COMPILATION_CACHE_DIR": CACHE_MOUNT,
         # Ensure python finds both your local scripts (/app) and mosaic (/mosaic)
         "PYTHONPATH": "/app:/mosaic",
         # High memory fraction for large binder + target complex
@@ -103,6 +101,7 @@ def train():
         ["python", "-u", "/app/train.py"],
         cwd="/app",
     )
+    data_volume.commit()
     cache_volume.commit()
     if result.returncode != 0:
         raise SystemExit(result.returncode)
