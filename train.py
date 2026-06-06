@@ -5,7 +5,7 @@ Usage: uv run train.py
 """
 
 import os
-os.environ['PYTORCH_ALLOC_CONF'] = "expandable_segements:True"
+os.environ['PYTORCH_ALLOC_CONF'] = "expandable_segments:True"
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.95"  # Use 95% of GPU (default 75%)
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"   # Allocate on-demand, not upfront
 
@@ -204,10 +204,10 @@ if soft_pssm_hyparams['n_steps'] + sharp_pssm_hyparams['n_steps'] + hard_pssm_hy
 # Setup: Initial Seq Design, Load in Models (Boltz & Soluble MPNN) Define Composite Loss Function
 # -------------------------------------------------------------------------------------------------------------
 # 1. Extract motif coordinates
-motif_ca_coords_first = np.load(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[0]]['path_ca_coords'])
-motif_cb_coords_first = np.load(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[0]]['path_cb_coords'])
-motif_ca_coords_second = np.load(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[1]]['path_ca_coords'])
-motif_cb_coords_second = np.load(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[1]]['path_cb_coords'])
+motif_ca_coords_first = np.load(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[0]]['path_coords_ca'])
+motif_cb_coords_first = np.load(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[0]]['path_coords_cb'])
+motif_ca_coords_second = np.load(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[1]]['path_coords_ca'])
+motif_cb_coords_second = np.load(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[1]]['path_coords_cb'])
 
 # 2. Create motif distograms
 motif_distogram_first = coords_to_distogram(motif_cb_coords_first)
@@ -218,6 +218,8 @@ binder_seq = ("X" * LINKER_LEN1) + CHAIN_MOTIF[MOTIF_CHAIN_ORDER[0]]['seq'] + ("
 CHAIN_MOTIF[MOTIF_CHAIN_ORDER[0]]['pos_design'] = list(range(LINKER_LEN1, LINKER_LEN1 + len(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[0]]['seq'])))
 CHAIN_MOTIF[MOTIF_CHAIN_ORDER[1]]['pos_design'] = list(range(binder_seq.find(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[1]]['seq']), 
                                                              binder_seq.find(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[1]]['seq']) + len(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[1]]['seq'])))
+motif_first_indices = jnp.array(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[0]]['pos_design'])
+motif_second_indices = jnp.array(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[1]]['pos_design'])
 # 4. Load in Initial Models
 model_boltz = Boltz2()
 model_mpnn = load_mpnn_sol(0.05)
@@ -227,24 +229,24 @@ BINDER_LENGTH = len(binder_seq)
 bias = (jnp.zeros((BINDER_LENGTH, 20)).at[:BINDER_LENGTH, TOKENS.index('C')].set(-1e6))
 
 # 5.1, define loss function for structure prediction of entire binder-target complex
-structure_prediction_loss = ((WEIGHT_BINDER_CONTACT_LOSS_FUNCTION * binder_contact_loss) 
-                             + (WEIGHT_WITHIN_BINDER_CONTACT_LOSS_FUNCTION * within_binder_contact_loss) 
-                             + (WEIGHT_INVERSE_FOLDING_SEQ_RECOVERY_LOSS_FUNCTION * inverse_folding_seq_recovery_loss) 
-                             + (WEIGHT_TARGET_BINDER_PAE_LOSS_FUNCTION * target_to_binder_pae_loss) 
-                             + (WEIGHT_BINDER_TARGET_PAE_LOSS_FUNCTION * binder_to_target_pae_loss) 
-                             + (WEIGHT_WITHIN_BINDER_PAE_LOSS_FUNCTION * within_binder_pae_loss) 
-                             + (WEIGHT_IPTM_LOSS_FUNCTION * iptm_loss) 
-                             + (WEIGHT_PTM_ENERGY_LOSS_FUNCTION * ptm_energy_loss) 
-                             + (WEIGHT_PLDDT_LOSS_FUNCTION * plddt_loss))
+structure_prediction_loss = ((WEIGHT_BINDER_CONTACT_LOSS_FUNCTION * sp.BinderTargetContact()) 
+                             + (WEIGHT_WITHIN_BINDER_CONTACT_LOSS_FUNCTION * sp.WithinBinderContact()) 
+                             + (WEIGHT_INVERSE_FOLDING_SEQ_RECOVERY_LOSS_FUNCTION * sp.InverseFoldingSequenceRecovery(model_mpnn, temp = jnp.array(0.001), bias = bias)) 
+                             + (WEIGHT_TARGET_BINDER_PAE_LOSS_FUNCTION * sp.TargetBinderPAE()) 
+                             + (WEIGHT_BINDER_TARGET_PAE_LOSS_FUNCTION * sp.BinderTargetPAE()) 
+                             + (WEIGHT_WITHIN_BINDER_PAE_LOSS_FUNCTION * sp.WithinBinderPAE()) 
+                             + (WEIGHT_IPTM_LOSS_FUNCTION * sp.IPTMLoss()) 
+                             + (WEIGHT_PTM_ENERGY_LOSS_FUNCTION * sp.pTMEnergy()) 
+                             + (WEIGHT_PLDDT_LOSS_FUNCTION * sp.PLDDTLoss()))
 # 5.2, define motif-specific loss functions for each motif
-motif_first_loss = ((WEIGHT_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_first)) + (WEIGHT_MOTIF_RMSD_LOSS_FUNCTION * MotifRMSDLoss(motif_ca_coords_first)))
-motif_second_loss = ((WEIGHT_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_second)) + (WEIGHT_MOTIF_RMSD_LOSS_FUNCTION * MotifRMSDLoss(motif_ca_coords_second)))
+motif_first_loss = ((WEIGHT_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_first, motif_first_indices)) + (WEIGHT_MOTIF_RMSD_LOSS_FUNCTION * MotifRMSDLoss(motif_ca_coords_first, motif_first_indices)))
+motif_second_loss = ((WEIGHT_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_second, motif_second_indices)) + (WEIGHT_MOTIF_RMSD_LOSS_FUNCTION * MotifRMSDLoss(motif_ca_coords_second, motif_second_indices)))
 
 # 5.3, define composite loss function for entire binder-target complex and motifs
 loss_fn = structure_prediction_loss + motif_first_loss + motif_second_loss
 
 # 5.4, establish loss function derived from Boltz2 Model
-features, _ = boltz_features, boltz_writer = struc_model.binder_features(binder_length = BINDER_LENGTH, chains = [TargetChain(sequence = SEQ_TARGET, use_msa = True)])
+features, _ = boltz_features, boltz_writer = model_boltz.binder_features(binder_length = BINDER_LENGTH, chains = [TargetChain(sequence = SEQ_TARGET, use_msa = True)])
 
 loss_fn_boltz = model_boltz.build_multisample_loss(
     loss = loss_fn,
@@ -254,7 +256,7 @@ loss_fn_boltz = model_boltz.build_multisample_loss(
 )
 
 # 5.5, Add Wrapper around the Boltz Loss Function such that gradients only flow through "X" residues or mutable residues
-masked_loss = SetPositions.from_sequence(wildtype = binder_seq, loss = loss_boltz)
+masked_loss = SetPositions.from_sequence(wildtype = binder_seq, loss = loss_fn_boltz)
 
 #-------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # Optimization: Define Initial PSSM and Optimize in 3 Stages: Soft -> Sharp -> Discrete
@@ -264,7 +266,7 @@ num_mutable_residues = len(masked_loss.variable_positions)
 pssm_initial = np.random.uniform(low = 0.25, high = 0.75) * jax.random.gumbel(key = jax.random.key(np.random.randint(100000000)), shape = (num_mutable_residues, 20))
 
 # 2. Generate an initial, "soft" (non-sparse) PSSM 
-_, pssm = simplex_APGM(loss_function= checkpointed_loss,
+_, pssm = simplex_APGM(loss_function= masked_loss,
                        x=jax.nn.softmax(pssm_initial),
                        n_steps= soft_pssm_hyparams['n_steps'],
                        stepsize=soft_pssm_hyparams['stepsize'],
@@ -275,7 +277,7 @@ _, pssm = simplex_APGM(loss_function= checkpointed_loss,
                        )
 
 # 3. Sharpen the PSSM into a discrete sequence (e.g. a one-hot PSSM)
-pssm, _ = simplex_APGM(loss_function= checkpointed_loss,
+_, pssm = simplex_APGM(loss_function= masked_loss,
                        x=jnp.log(pssm + 1e-5),
                        n_steps= sharp_pssm_hyparams['n_steps'],
                        stepsize=sharp_pssm_hyparams['stepsize'],
@@ -285,7 +287,7 @@ pssm, _ = simplex_APGM(loss_function= checkpointed_loss,
                        max_gradient_norm=1.0,
                        )
 # 4. Further sharpen the PSSM into a discrete sequence (e.g. a one-hot PSSM)
-pssm, _ = simplex_APGM(loss_function= checkpointed_loss,
+_, pssm = simplex_APGM(loss_function= masked_loss,
                        x=jnp.log(pssm + 1e-5),
                        n_steps= hard_pssm_hyparams['n_steps'],
                        stepsize=hard_pssm_hyparams['stepsize'],
