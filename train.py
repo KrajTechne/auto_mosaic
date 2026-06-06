@@ -31,7 +31,7 @@ from mosaic.losses.transformations import NoCys, SetPositions, SoftClip
 from mosaic.structure_prediction import TargetChain
 from mosaic.optimizers import simplex_APGM
 
-from prepare import SEQ_TARGET, CHAIN_MOTIF, MAX_OPTIMIZER_STEPS, DATA_DIR, calculate_motif_rmsd, evaluate_optimized_structure
+from prepare import SEQ_TARGET, CHAIN_MOTIF, MAX_OPTIMIZER_STEPS, DATA_DIR, calculate_motif_rmsd, evaluate_optimized_structure, compute_composite_score
 
 #-----------------------------------------------------------------------------------------------------
 # Helper Function for Loss Function
@@ -304,5 +304,5 @@ pssm_with_fixed_residues = masked_loss.sequence(pssm)
 # Final Evaluation
 # --------------------------------------------------------------------------------------------------------------
 design_iteration = sum(".pdb" in x for x in os.listdir(DATA_DIR)) - 1 # Account for the initial PDB file used for the initial motifs
-motif_rmsd, structure_iptm, binder_plddt = evaluate_optimized_structure(model_boltz = model_boltz, seq_pssm = pssm_with_fixed_residues, motif_id_pos = CHAIN_MOTIF,
-                                                                        design_iteration = design_iteration)
+composite_score = evaluate_optimized_structure(model_boltz = model_boltz, seq_pssm = pssm_with_fixed_residues, motif_id_pos = CHAIN_MOTIF,
+                                                                                          design_iteration = design_iteration)

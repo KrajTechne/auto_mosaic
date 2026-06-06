@@ -119,6 +119,19 @@ def calculate_motif_rmsd(designed_array, motif_res_pos: list, motif_coords_nativ
 
     return rmsd
 
+def compute_composite_score(motif_rmsd_dict: dict, structure_iptm: float, binder_plddt: float) -> float:
+    """
+    Single composite score for autoresearch optimization. Lower is better.
+    RMSD is normalized via 1-exp(-rmsd/1.5) so all terms are on [0,1).
+    """
+    mean_rmsd = np.mean(list(motif_rmsd_dict.values()))
+    rmsd_score = 1.0 - np.exp(-mean_rmsd / 1.5)
+    return (
+        2.0 * rmsd_score
+        + 1.0 * (1.0 - structure_iptm)
+        + 0.5 * (1.0 - binder_plddt)
+    )
+
 def evaluate_optimized_structure(model_boltz, seq_pssm, motif_id_pos: dict, design_iteration: int):
     """
     Evaluates the optimized structure by calculating the following metrics:
@@ -165,8 +178,10 @@ def evaluate_optimized_structure(model_boltz, seq_pssm, motif_id_pos: dict, desi
         print("As always, smaller RMSD is better and ideal RMSD is < 1.5 Angstroms")
     print(f"Structure IPTM: {structure_iptm:.2f}")
     print(f"Structure PLDDT: {binder_plddt:.2f}")
+    composite_score = compute_composite_score(motif_rmsd_dict, structure_iptm, binder_plddt)
+    print(f"Final Optimization Score: {composite_score:.4f}  (lower is better; target < 1.5)")
     print("-" * 50)
-    return motif_rmsd_dict, structure_iptm, binder_plddt
+    return composite_score
 
 #--------------------------------------------------------------------------------------------------------------------
 # Main
