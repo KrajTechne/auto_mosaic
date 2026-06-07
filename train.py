@@ -170,9 +170,10 @@ WEIGHT_WITHIN_BINDER_PAE_LOSS_FUNCTION = 0.5 # Weight of the within-binder PAE l
 WEIGHT_IPTM_LOSS_FUNCTION = 0.1 # Weight of the iptm loss function in the total/composite loss
 WEIGHT_PTM_ENERGY_LOSS_FUNCTION = 0.1 # Weight of the ptm energy loss function in the total/composite loss
 WEIGHT_PLDDT_LOSS_FUNCTION = 0.1 # Weight of the plddt loss function in the total/composite loss
-WEIGHT_MOTIF_DISTOGRAM_LOSS_FUNCTION = 0.1 # Weight of the motif distogram loss function in the total/composite loss
-WEIGHT_MOTIF_RMSD_LOSS_FUNCTION = 0.1 # Weight of the motif rmsd loss function in the total/composite loss
-
+WEIGHT_FIRST_MOTIF_DISTOGRAM_LOSS_FUNCTION = 0.1 # Weight of the motif distogram loss function in the total/composite loss
+WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION = 0.1 # Weight of the motif rmsd loss function in the total/composite loss
+WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION = 0.1
+WEIGHT_SECOND_MOTIF_RMSD_LOSS_FUNCTION = 0.1
 # Initial "soft" PSSM -> Try to sharpen PSSM into a discrete sequence (e.g. one-hot PSSM) -> Further sharpening with a "hard" PSSM
 # Optimizer Parameters: 
 soft_pssm_hyparams = {
@@ -231,7 +232,7 @@ bias = (jnp.zeros((BINDER_LENGTH, 20)).at[:BINDER_LENGTH, TOKENS.index('C')].set
 # 5.1, define loss function for structure prediction of entire binder-target complex
 structure_prediction_loss = ((WEIGHT_BINDER_CONTACT_LOSS_FUNCTION * sp.BinderTargetContact()) 
                              + (WEIGHT_WITHIN_BINDER_CONTACT_LOSS_FUNCTION * sp.WithinBinderContact()) 
-                             + (WEIGHT_INVERSE_FOLDING_SEQ_RECOVERY_LOSS_FUNCTION * sp.InverseFoldingSequenceRecovery(model_mpnn, temp = jnp.array(0.001), bias = bias)) 
+                             + (WEIGHT_INVERSE_FOLDING_SEQ_RECOVERY_LOSS_FUNCTION * InverseFoldingSequenceRecovery(model_mpnn, temp = jnp.array(0.001), bias = bias)) 
                              + (WEIGHT_TARGET_BINDER_PAE_LOSS_FUNCTION * sp.TargetBinderPAE()) 
                              + (WEIGHT_BINDER_TARGET_PAE_LOSS_FUNCTION * sp.BinderTargetPAE()) 
                              + (WEIGHT_WITHIN_BINDER_PAE_LOSS_FUNCTION * sp.WithinBinderPAE()) 
@@ -239,8 +240,8 @@ structure_prediction_loss = ((WEIGHT_BINDER_CONTACT_LOSS_FUNCTION * sp.BinderTar
                              + (WEIGHT_PTM_ENERGY_LOSS_FUNCTION * sp.pTMEnergy()) 
                              + (WEIGHT_PLDDT_LOSS_FUNCTION * sp.PLDDTLoss()))
 # 5.2, define motif-specific loss functions for each motif
-motif_first_loss = ((WEIGHT_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_first, motif_first_indices)) + (WEIGHT_MOTIF_RMSD_LOSS_FUNCTION * MotifRMSDLoss(motif_ca_coords_first, motif_first_indices)))
-motif_second_loss = ((WEIGHT_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_second, motif_second_indices)) + (WEIGHT_MOTIF_RMSD_LOSS_FUNCTION * MotifRMSDLoss(motif_ca_coords_second, motif_second_indices)))
+motif_first_loss = ((WEIGHT_FIRST_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_first, motif_first_indices)) + (WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION * MotifRMSDLoss(motif_ca_coords_first, motif_first_indices)))
+motif_second_loss = ((WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_second, motif_second_indices)) + (WEIGHT_SECOND_MOTIF_RMSD_LOSS_FUNCTION * MotifRMSDLoss(motif_ca_coords_second, motif_second_indices)))
 
 # 5.3, define composite loss function for entire binder-target complex and motifs
 loss_fn = structure_prediction_loss + motif_first_loss + motif_second_loss
