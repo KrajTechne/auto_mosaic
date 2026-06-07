@@ -172,6 +172,7 @@ def evaluate_optimized_structure(model_boltz, seq_pssm, motif_id_pos: dict, desi
     # 8. Display Metrics for Agent to interpret and decide next step:
     print("-" * 50)
     print(f"For Design Iteration: {design_iteration}")
+    print(f"You have Designed Binder Sequence: {seq_binder}")
     print("Your selection of hyperparameters has resulted in: ")
     for motif_id, rmsd in motif_rmsd_dict.items():
         print(f"Motif From Chain: {motif_id} has an associated RMSD: {rmsd:.2f}")
