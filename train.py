@@ -304,6 +304,6 @@ pssm_with_fixed_residues = masked_loss.sequence(pssm)
 # --------------------------------------------------------------------------------------------------------------
 # Final Evaluation
 # --------------------------------------------------------------------------------------------------------------
-design_iteration = sum(".pdb" in x for x in os.listdir(DATA_DIR)) - 1 # Account for the initial PDB file used for the initial motifs
+design_iteration = sum(".pdb" in x for x in os.listdir(DATA_DIR)) # Initial PDB not stored in DATA_DIR
 composite_score = evaluate_optimized_structure(model_boltz = model_boltz, seq_pssm = pssm_with_fixed_residues, motif_id_pos = CHAIN_MOTIF,
                                                                                           design_iteration = design_iteration)
