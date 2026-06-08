@@ -92,7 +92,7 @@ def prepare_data():
         DATA_MOUNT: data_volume,
         CACHE_MOUNT: cache_volume,
     },
-    timeout=3600, # Extended timeout for large multi-step PSSM optimization
+    timeout=1800, # Extended timeout for large multi-step PSSM optimization (In Seconds)
 )
 def train():
     """Run train.py on a remote GPU. Output streams to stdout."""
