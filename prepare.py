@@ -180,7 +180,7 @@ def evaluate_optimized_structure(model_boltz, seq_pssm, motif_id_pos: dict, desi
     print(f"Structure IPTM: {structure_iptm:.2f}")
     print(f"Structure PLDDT: {binder_plddt:.2f}")
     composite_score = compute_composite_score(motif_rmsd_dict, structure_iptm, binder_plddt)
-    print(f"Final Optimization Score: {composite_score:.4f}  (lower is better; target < 1.5)")
+    print(f"Composite Score: {composite_score:.4f}  (lower is better; target < 1.5)")
     print("-" * 50)
     return composite_score
 
