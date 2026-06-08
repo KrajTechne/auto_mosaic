@@ -54,7 +54,7 @@ composite_score = 2.0 * (1 - exp(-mean_motif_rmsd / 1.5))   # motif placement (p
 
 A good design has:
 - Motif RMSD < 1.5 Å for both chains (motifs are correctly placed)
-- iPTM > 0.6 (confident binding to the target)
+- iPTM > 0.8 (confident binding to the target)
 - pLDDT > 0.7 (the binder is well-folded)
 
 **Simplicity criterion**: All else being equal, simpler is better. A 0.05 score improvement that adds complex code is not worth it. Removing a loss term and getting equal or better results is a win.
@@ -67,7 +67,8 @@ At the end of a run, `evaluate_optimized_structure` prints:
 
 ```
 --------------------------------------------------
-For Design Iteration: 0
+For Design Iteration:
+You have designed binder seq: LHSHPYWTPPYPHHERMDQRKERVRKYAFLLTKWTNEEQKEWYHRQLVIILNLSQLDMQRFVDWFGFPGERWPHTDPPLRLWWNYSLEMVKFVKQDWGCLL
 Your selection of hyperparameters has resulted in:
 Motif From Chain: A has an associated RMSD: 1.23
   As always, smaller RMSD is better and ideal RMSD is < 1.5 Angstroms
@@ -134,7 +135,7 @@ LOOP FOREVER:
 9. If composite_score improved (lower), keep the commit and advance.
 10. If equal or worse, `git reset --hard HEAD~1` to discard.
 
-**Runtime**: Each run takes ~45–90 minutes on an H100 (100 total optimizer steps × ~30–60 s per Boltz2 forward/backward). The Modal timeout is 3600 s (1 hour) — if a run hits this, treat it as a crash and reduce the number of optimizer steps.
+**Runtime**: Each run takes ~15 minutes on an H100 (100 total optimizer steps × ~5-10 seconds per Boltz2 forward/backward). The Modal timeout is 1800 seconds (30 minutes or 1/2 hour) — if a run hits this, treat it as a crash and reduce the number of optimizer steps. Feel free to check in every 5 minutes to see how the experiment is going by analyzing the log file.
 
 **Crashes**: Fix obvious bugs (typos, import errors) and re-run. If the idea itself is broken, skip it.
 
