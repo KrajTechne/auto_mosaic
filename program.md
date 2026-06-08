@@ -139,4 +139,4 @@ LOOP FOREVER:
 
 **Crashes**: Fix obvious bugs (typos, import errors) and re-run. If the idea itself is broken, skip it.
 
-**STOPPING CONDITION**: You are only authorized to run a maximum of 5 experiment loops. Once the 3rd evaluation is complete, log the final results and exit.
+**STOPPING CONDITION**: You are only authorized to run a maximum of 5 experiment loops. Once the 5th evaluation is complete, log the final results and exit.
