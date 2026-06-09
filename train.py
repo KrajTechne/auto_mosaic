@@ -170,6 +170,7 @@ WEIGHT_WITHIN_BINDER_PAE_LOSS_FUNCTION = 0.5 # Weight of the within-binder PAE l
 WEIGHT_IPTM_LOSS_FUNCTION = 0.1 # Weight of the iptm loss function in the total/composite loss
 WEIGHT_PTM_ENERGY_LOSS_FUNCTION = 0.1 # Weight of the ptm energy loss function in the total/composite loss
 WEIGHT_PLDDT_LOSS_FUNCTION = 0.1 # Weight of the plddt loss function in the total/composite loss
+WEIGHT_HELIX_LOSS_FUNCTION = 0.1 # Weight of the helix loss function (reduce presence of alpha helices in final design) in the total/composite loss
 WEIGHT_FIRST_MOTIF_DISTOGRAM_LOSS_FUNCTION = 0.1 # Weight of the motif distogram loss function in the total/composite loss
 WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION = 0.1 # Weight of the motif rmsd loss function in the total/composite loss
 WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION = 0.1
@@ -238,7 +239,8 @@ structure_prediction_loss = ((WEIGHT_BINDER_CONTACT_LOSS_FUNCTION * sp.BinderTar
                              + (WEIGHT_WITHIN_BINDER_PAE_LOSS_FUNCTION * sp.WithinBinderPAE()) 
                              + (WEIGHT_IPTM_LOSS_FUNCTION * sp.IPTMLoss()) 
                              + (WEIGHT_PTM_ENERGY_LOSS_FUNCTION * sp.pTMEnergy()) 
-                             + (WEIGHT_PLDDT_LOSS_FUNCTION * sp.PLDDTLoss()))
+                             + (WEIGHT_PLDDT_LOSS_FUNCTION * sp.PLDDTLoss())
+                             + (WEIGHT_HELIX_LOSS_FUNCTION * sp.HelixLoss()))
 # 5.2, define motif-specific loss functions for each motif
 motif_first_loss = ((WEIGHT_FIRST_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_first, motif_first_indices)) + (WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION * MotifRMSDLoss(motif_ca_coords_first, motif_first_indices)))
 motif_second_loss = ((WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_second, motif_second_indices)) + (WEIGHT_SECOND_MOTIF_RMSD_LOSS_FUNCTION * MotifRMSDLoss(motif_ca_coords_second, motif_second_indices)))
