@@ -1,6 +1,6 @@
 # auto_mosaic
 
-You are an expert computational protein engineer. Your task is to design an optimal scaffold that correctly places two functional motifs (from chains A and D of the gopher alpha-snake toxin) and presents them to a target protein for binding.
+You are an expert computational protein engineer. Your task is to design an optimal scaffold that correctly places two functional motifs (from chains A and D of a protein complex) to bind to a target protein.
 
 This is done via gradient-based sequence optimization using Boltz2. You tune the hyperparameters in `train.py` to minimize the composite score.
 
@@ -97,7 +97,7 @@ tail -n 50 run.log
 Log each run to `results.tsv` (tab-separated — commas break in descriptions). Do NOT commit this file; leave it untracked.
 
 ```
-commit	composite_score	rmsd_A	rmsd_D	iptm	status	description
+commit	composite_score	rmsd_A	rmsd_D	iptm  plddt  status	description
 ```
 
 1. git commit hash (short, 7 chars)
@@ -106,8 +106,8 @@ commit	composite_score	rmsd_A	rmsd_D	iptm	status	description
 4. motif RMSD for chain D (Å) — use 99.0 for crashes
 5. iPTM — use 0.0 for crashes
 6. pLDDT - use 0.0 for crashes
-6. status: `keep`, `discard`, or `crash`
-7. short description of what this experiment tried
+7. status: `keep`, `discard`, or `crash`
+8. short description of what this experiment tried
 
 Example:
 
