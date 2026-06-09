@@ -179,30 +179,30 @@ WEIGHT_SECOND_MOTIF_RMSD_LOSS_FUNCTION = 0.1
 # Initial "soft" PSSM -> Try to sharpen PSSM into a discrete sequence (e.g. one-hot PSSM) -> Further sharpening with a "hard" PSSM
 # Optimizer Parameters: 
 soft_pssm_hyparams = {
-    'n_steps' : 50,
+    'n_steps' : 100,
     'stepsize' : 1.5,
     'momentum' : 0.3,
     'scale'    : 1.00,
     'logspace' : False,
 }
 sharp_pssm_hyparams = {
-    'n_steps' : 30,
+    'n_steps' : 50,
     'stepsize' : 3.5,
     'momentum' : 0.0,
     'scale'    : 1.25,
     'logspace' : True
 }
 hard_pssm_hyparams = {
-    'n_steps' : 20,
+    'n_steps' : 15,
     'stepsize' : 3.5,
     'momentum' : 0.0,
     'scale'    : 1.40,
     'logspace' : True
 }
 
-# If total number of pssm steps is > 100, raise error
+# If total number of pssm steps is > 165, raise error
 if soft_pssm_hyparams['n_steps'] + sharp_pssm_hyparams['n_steps'] + hard_pssm_hyparams['n_steps'] > MAX_OPTIMIZER_STEPS:
-    raise ValueError("Total number of PSSM steps is greater than 100. Please reduce the number of steps such that the total number of steps is less than or equal to 100.")
+    raise ValueError(f"Total number of PSSM steps is greater than {MAX_OPTIMIZER_STEPS}. Please reduce the number of steps such that the total number of steps is less than or equal to {MAX_OPTIMIZER_STEPS}.")
 # ------------------------------------------------------------------------------------------------------------
 # Setup: Initial Seq Design, Load in Models (Boltz & Soluble MPNN) Define Composite Loss Function
 # -------------------------------------------------------------------------------------------------------------
@@ -285,7 +285,7 @@ _, pssm = simplex_APGM(loss_function= masked_cys_loss,
                        )
 
 # 3. Sharpen the PSSM into a discrete sequence (e.g. a one-hot PSSM)
-_, pssm = simplex_APGM(loss_function= masked_cys_loss,
+pssm, _ = simplex_APGM(loss_function= masked_cys_loss,
                        x=jnp.log(pssm + 1e-5),
                        n_steps= sharp_pssm_hyparams['n_steps'],
                        stepsize=sharp_pssm_hyparams['stepsize'],
@@ -295,7 +295,7 @@ _, pssm = simplex_APGM(loss_function= masked_cys_loss,
                        max_gradient_norm=1.0,
                        )
 # 4. Further sharpen the PSSM into a discrete sequence (e.g. a one-hot PSSM)
-_, pssm = simplex_APGM(loss_function= masked_cys_loss,
+pssm, _ = simplex_APGM(loss_function= masked_cys_loss,
                        x=jnp.log(pssm + 1e-5),
                        n_steps= hard_pssm_hyparams['n_steps'],
                        stepsize=hard_pssm_hyparams['stepsize'],

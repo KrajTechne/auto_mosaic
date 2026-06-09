@@ -31,7 +31,7 @@ The `X` linker residues are free to optimize; the motif residues are fixed. Bolt
 
 - **Linker lengths**: `LINKER_LEN1`, `LINKER_LEN2`, `LINKER_LEN3` — controls binder length and motif spacing. Total binder length = LINKER_LEN1 + 6 + LINKER_LEN2 + 5 + LINKER_LEN3.
 - **Loss function weights**: the 11 `WEIGHT_*` constants controlling the relative contribution of each term (binder contact, PAE, iPTM, pLDDT, motif distogram, motif RMSD, etc.).
-- **Optimizer hyperparameters**: `soft_pssm_hyparams`, `sharp_pssm_hyparams`, `hard_pssm_hyparams` — each controls `n_steps`, `stepsize`, `momentum`, `scale`, and `logspace` for that stage. Total steps across all three stages must not exceed `MAX_OPTIMIZER_STEPS` (100).
+- **Optimizer hyperparameters**: `soft_pssm_hyparams`, `sharp_pssm_hyparams`, `hard_pssm_hyparams` — each controls `n_steps`, `stepsize`, `momentum`, `scale`, and `logspace` for that stage. Total steps across all three stages must not exceed `MAX_OPTIMIZER_STEPS` (165).
 - **Motif chain order**: `MOTIF_CHAIN_ORDER` — controls which motif appears first in the binder sequence.
 
 ## What you cannot do
@@ -136,8 +136,8 @@ LOOP FOREVER:
 9. If composite_score improved (lower), keep the commit and advance.
 10. If equal or worse, `git reset --hard HEAD~1` to discard.
 
-**Runtime**: Each run takes ~15 minutes on an H100 (100 total optimizer steps × ~5-10 seconds per Boltz2 forward/backward). The Modal timeout is 3600 seconds (60 minutes or 1 hour) — if a run hits this, treat it as a crash and reduce the number of optimizer steps. Every 5 minutes analyze the log file to check how the experiment is going. 
+**Runtime**: Each run takes ~20 minutes on an H100 (165 total optimizer steps × ~5-10 seconds per Boltz2 forward/backward). The Modal timeout is 3600 seconds (60 minutes or 1 hour) — if a run hits this, treat it as a crash and reduce the number of optimizer steps. Every 5 minutes analyze the log file to check how the experiment is going. 
 
 **Crashes**: Fix obvious bugs (typos, import errors) and re-run. If the idea itself is broken, skip it.
 
-**STOPPING CONDITION**: You are only authorized to run a maximum of 8 experiment loops. Once the 8th evaluation is complete, log the final results and exit.
+**STOPPING CONDITION**: You are only authorized to run a maximum of 2 experiment loops. Once the 2nd evaluation is complete, log the final results and exit.

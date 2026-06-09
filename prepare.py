@@ -35,7 +35,7 @@ from mosaic.common import TOKENS
 #-------------------------------------------------------------------------
 # Configuration 
 #-------------------------------------------------------------------------
-MAX_OPTIMIZER_STEPS = 100
+MAX_OPTIMIZER_STEPS = 165
 CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "autoresearch")
 DATA_DIR = os.path.join(CACHE_DIR, "data")
 PATH_INPUT_STRUCTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gopher_alpha_snake.pdb")
