@@ -259,15 +259,19 @@ loss_fn_boltz = model_boltz.build_multisample_loss(
 # 5.5, Add Wrapper around the Boltz Loss Function such that gradients only flow through "X" residues or mutable residues
 masked_loss = SetPositions.from_sequence(wildtype = binder_seq, loss = loss_fn_boltz)
 
+# 5.6 Add NoCys Wrapper around the Masked Positions & Boltz Loss Function to ensure "Cys" are not sampled as binder residues
+masked_cys_loss = NoCys(masked_loss) 
+
 #-------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # Optimization: Define Initial PSSM and Optimize in 3 Stages: Soft -> Sharp -> Discrete
 #-------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # 1. Create Initial PSSM
 num_mutable_residues = len(masked_loss.variable_positions)
-pssm_initial = np.random.uniform(low = 0.25, high = 0.75) * jax.random.gumbel(key = jax.random.key(np.random.randint(100000000)), shape = (num_mutable_residues, 20))
+# 19 potential residues since Cys are explicitly not included in the PSSM
+pssm_initial = np.random.uniform(low = 0.25, high = 0.75) * jax.random.gumbel(key = jax.random.key(np.random.randint(100000000)), shape = (num_mutable_residues, 19))
 
 # 2. Generate an initial, "soft" (non-sparse) PSSM 
-_, pssm = simplex_APGM(loss_function= masked_loss,
+_, pssm = simplex_APGM(loss_function= masked_cys_loss,
                        x=jax.nn.softmax(pssm_initial),
                        n_steps= soft_pssm_hyparams['n_steps'],
                        stepsize=soft_pssm_hyparams['stepsize'],
@@ -278,7 +282,7 @@ _, pssm = simplex_APGM(loss_function= masked_loss,
                        )
 
 # 3. Sharpen the PSSM into a discrete sequence (e.g. a one-hot PSSM)
-_, pssm = simplex_APGM(loss_function= masked_loss,
+_, pssm = simplex_APGM(loss_function= masked_cys_loss,
                        x=jnp.log(pssm + 1e-5),
                        n_steps= sharp_pssm_hyparams['n_steps'],
                        stepsize=sharp_pssm_hyparams['stepsize'],
@@ -288,7 +292,7 @@ _, pssm = simplex_APGM(loss_function= masked_loss,
                        max_gradient_norm=1.0,
                        )
 # 4. Further sharpen the PSSM into a discrete sequence (e.g. a one-hot PSSM)
-_, pssm = simplex_APGM(loss_function= masked_loss,
+_, pssm = simplex_APGM(loss_function= masked_cys_loss,
                        x=jnp.log(pssm + 1e-5),
                        n_steps= hard_pssm_hyparams['n_steps'],
                        stepsize=hard_pssm_hyparams['stepsize'],
@@ -298,8 +302,10 @@ _, pssm = simplex_APGM(loss_function= masked_loss,
                        max_gradient_norm=1.0,
                        )
 
-# 5. Add fixed residues back into the PSSM
-pssm_with_fixed_residues = masked_loss.sequence(pssm)
+# 5. Add Cysteine back into the PSSM
+pssm_with_cysteine = masked_cys_loss.sequence(pssm)
+# 6. Add Fixed Residues back into PSSM
+pssm_with_fixed_residues = masked_cys_loss.loss.sequence(pssm_with_cysteine)
 
 # --------------------------------------------------------------------------------------------------------------
 # Final Evaluation
