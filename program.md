@@ -105,17 +105,18 @@ commit	composite_score	rmsd_A	rmsd_D	iptm	status	description
 3. motif RMSD for chain A (Å) — use 99.0 for crashes
 4. motif RMSD for chain D (Å) — use 99.0 for crashes
 5. iPTM — use 0.0 for crashes
+6. pLDDT - use 0.0 for crashes
 6. status: `keep`, `discard`, or `crash`
 7. short description of what this experiment tried
 
 Example:
 
 ```
-commit	composite_score	rmsd_A	rmsd_D	iptm	status	description
-a1b2c3d	1.3245	1.23	0.98	0.71	keep	baseline
-b2c3d4e	1.1832	0.87	0.76	0.78	keep	increase motif RMSD weight to 0.3
-c3d4e5f	1.5901	2.14	1.89	0.55	discard	shorten linkers to 15-15-15
-d4e5f6g	99.0000	99.0	99.0	0.0	crash	too many optimizer steps (OOM)
+commit	composite_score	rmsd_A  rmsd_D  iptm  plddt status  description
+a1b2c3d	1.3245	1.23	0.98	0.71  0.65  keep	baseline
+b2c3d4e	1.1832	0.87	0.76	0.78  0.85  keep	increase motif RMSD weight to 0.3
+c3d4e5f	1.5901	2.14	1.89	0.55  0.45  discard	shorten linkers to 15-15-15
+d4e5f6g	99.0000	99.0	99.0	0.0 0.0 crash	too many optimizer steps (OOM)
 ```
 
 ## The experiment loop
@@ -135,8 +136,8 @@ LOOP FOREVER:
 9. If composite_score improved (lower), keep the commit and advance.
 10. If equal or worse, `git reset --hard HEAD~1` to discard.
 
-**Runtime**: Each run takes ~15 minutes on an H100 (100 total optimizer steps × ~5-10 seconds per Boltz2 forward/backward). The Modal timeout is 1800 seconds (30 minutes or 1/2 hour) — if a run hits this, treat it as a crash and reduce the number of optimizer steps. Feel free to check in every 5 minutes to see how the experiment is going by analyzing the log file.
+**Runtime**: Each run takes ~15 minutes on an H100 (100 total optimizer steps × ~5-10 seconds per Boltz2 forward/backward). The Modal timeout is 3600 seconds (60 minutes or 1 hour) — if a run hits this, treat it as a crash and reduce the number of optimizer steps. Every 5 minutes analyze the log file to check how the experiment is going. 
 
 **Crashes**: Fix obvious bugs (typos, import errors) and re-run. If the idea itself is broken, skip it.
 
-**STOPPING CONDITION**: You are only authorized to run a maximum of 5 experiment loops. Once the 5th evaluation is complete, log the final results and exit.
+**STOPPING CONDITION**: You are only authorized to run a maximum of 8 experiment loops. Once the 8th evaluation is complete, log the final results and exit.
