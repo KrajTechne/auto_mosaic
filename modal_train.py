@@ -67,7 +67,7 @@ image = (
         "XLA_PYTHON_CLIENT_MEM_FRACTION": "0.95",
         "XLA_PYTHON_CLIENT_PREALLOCATE": "false"
     })
-    .add_local_dir(".", remote_path="/app")
+    .add_local_dir(".", remote_path="/app", ignore = ["run.log", "results.tsv", "__pycache__"])
 )
 
 app = modal.App("hallucinate", image=image)

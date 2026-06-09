@@ -2,7 +2,7 @@
 
 You are an expert computational protein engineer. Your task is to design an optimal scaffold that correctly places two functional motifs (from chains A and D of a protein complex) to bind to a target protein.
 
-This is done via gradient-based sequence optimization using Boltz2. You tune the hyperparameters in `train.py` to minimize the composite score.
+This is done via gradient-based sequence optimization using Boltz2. You tune the hyperparameters in `train.py` to minimize the composite score. Gradient-based sequence optimization via Boltz2 outputs an optimized binder sequence, which is used alongside the original target sequence to predict a binder-target structure via ESMFold2. Structure confidence metrics: iPTM, pLDDT alongside respective motif rmsd metrics are extracted and used to compute composite score. ESMFold2 is ran with an MSA generated for the target sequence, but no MSA is generated for the binder sequence. 
 
 ## Setup
 
@@ -129,7 +129,7 @@ LOOP FOREVER:
 2. Form a hypothesis about what to change in `train.py` and why (e.g. "motif RMSD is high — increase `WEIGHT_MOTIF_RMSD_LOSS_FUNCTION`").
 3. Edit `train.py` directly with the change.
 4. `git commit`
-5. Run: `modal run modal_train.py > run.log 2>&1` (redirect everything — do NOT let output flood your context)
+5. Run: `PYTHONUTF8=1 modal run modal_train.py > run.log 2>&1` (redirect everything — do NOT let output flood your context)
 6. Read results: `grep "^Composite Score:" run.log`
 7. If grep returns nothing, the run crashed. Run `tail -n 50 run.log` to diagnose and attempt a fix. If the idea is fundamentally broken, log "crash" and move on.
 8. Record results in `results.tsv`.
