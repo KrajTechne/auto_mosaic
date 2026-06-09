@@ -132,7 +132,7 @@ def compute_composite_score(motif_rmsd_dict: dict, structure_iptm: float, binder
         + 0.5 * (1.0 - binder_plddt)
     )
 
-def evaluate_optimized_structure(model_boltz, seq_pssm, motif_id_pos: dict, design_iteration: int):
+def evaluate_optimized_structure(model_esm2, seq_pssm, motif_id_pos: dict, design_iteration: int, recycling_steps: int = 5, sampling_steps: int = 21):
     """
     Evaluates the optimized structure by calculating the following metrics:
     1. Motif RMSD for each motif
@@ -143,14 +143,15 @@ def evaluate_optimized_structure(model_boltz, seq_pssm, motif_id_pos: dict, desi
     seq_tokenized = seq_pssm.argmax(-1)
     seq_binder = "".join(TOKENS[i] for i in seq_tokenized)
     # 2. Create features for Boltz Complex Structure Prediction
-    boltz_features, boltz_writer = model_boltz.target_only_features(
+    esm_features, esm_writer = model_esm2.target_only_features(
         chains = [
             TargetChain(sequence = seq_binder, use_msa = False),
             TargetChain(sequence = SEQ_TARGET, use_msa = True),
         ]
     )
     # 3. Predict Boltz Structure
-    pred = model_boltz.predict(PSSM = seq_pssm, features = boltz_features, writer = boltz_writer, key = jax.random.key(11))
+    pred = model_esm2.predict(PSSM = seq_pssm, features = esm_features, writer = esm_writer, key = jax.random.key(11), 
+                              recycling_steps = recycling_steps, sampling_steps = sampling_steps)
     # 4. Save outputted gemmi structure to file and open up as a Biotite atom array
     designed_structure = pred.st
     path_designed_structure = os.path.join(DATA_DIR, f"designed_structure_{design_iteration}.pdb")

@@ -22,6 +22,7 @@ from jaxtyping import Array, Float, Int
 import mosaic
 from mosaic.proteinmpnn.mpnn import load_mpnn_sol
 from mosaic.models.boltz2 import Boltz2
+from mosaic.models.esmfold2 import ESMFold2Full
 from mosaic.common import LossTerm
 from mosaic.structure_prediction import StructureModelOutput
 import mosaic.losses.structure_prediction as sp
@@ -170,7 +171,7 @@ WEIGHT_WITHIN_BINDER_PAE_LOSS_FUNCTION = 0.5 # Weight of the within-binder PAE l
 WEIGHT_IPTM_LOSS_FUNCTION = 0.1 # Weight of the iptm loss function in the total/composite loss
 WEIGHT_PTM_ENERGY_LOSS_FUNCTION = 0.1 # Weight of the ptm energy loss function in the total/composite loss
 WEIGHT_PLDDT_LOSS_FUNCTION = 0.1 # Weight of the plddt loss function in the total/composite loss
-WEIGHT_HELIX_LOSS_FUNCTION = 0.1 # Weight of the helix loss function (reduce presence of alpha helices in final design) in the total/composite loss
+WEIGHT_HELIX_LOSS_FUNCTION = 0.3 # Weight of the helix loss function (reduce presence of alpha helices in final design) in the total/composite loss
 WEIGHT_FIRST_MOTIF_DISTOGRAM_LOSS_FUNCTION = 0.1 # Weight of the motif distogram loss function in the total/composite loss
 WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION = 0.1 # Weight of the motif rmsd loss function in the total/composite loss
 WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION = 0.1
@@ -249,7 +250,7 @@ motif_second_loss = ((WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogr
 loss_fn = structure_prediction_loss + motif_first_loss + motif_second_loss
 
 # 5.4, establish loss function derived from Boltz2 Model
-features, _ = boltz_features, boltz_writer = model_boltz.binder_features(binder_length = BINDER_LENGTH, chains = [TargetChain(sequence = SEQ_TARGET, use_msa = True)])
+features, _ = model_boltz.binder_features(binder_length = BINDER_LENGTH, chains = [TargetChain(sequence = SEQ_TARGET, use_msa = True)])
 
 loss_fn_boltz = model_boltz.build_multisample_loss(
     loss = loss_fn,
@@ -313,5 +314,6 @@ pssm_with_fixed_residues = masked_cys_loss.loss.sequence(pssm_with_cysteine)
 # Final Evaluation
 # --------------------------------------------------------------------------------------------------------------
 design_iteration = sum(".pdb" in x for x in os.listdir(DATA_DIR)) # Initial PDB not stored in DATA_DIR
-composite_score = evaluate_optimized_structure(model_boltz = model_boltz, seq_pssm = pssm_with_fixed_residues, motif_id_pos = CHAIN_MOTIF,
+model_esm2 = ESMFold2Full()
+composite_score = evaluate_optimized_structure(model_esm2 = model_esm2, seq_pssm = pssm_with_fixed_residues, motif_id_pos = CHAIN_MOTIF,
                                                                                           design_iteration = design_iteration)

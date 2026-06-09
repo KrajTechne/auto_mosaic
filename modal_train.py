@@ -15,19 +15,24 @@ import modal
 # Image Build Functions
 # ---------------------------------------------------------------------------
 
-def download_boltz2_mpnn():
+def download_model_weights():
     """
     Triggered during the Modal image build step. 
     Instantiating the model forces the weights to download and bake into the image.
     """
     from mosaic.models.boltz2 import Boltz2
     from mosaic.proteinmpnn.mpnn import load_mpnn_sol
+    from mosaic.models.esmfold2 import ESMFold2Full
     print("Downloading Boltz2 weights into container image...")
     _ = Boltz2()
     print("Boltz2 Weights successfully cached.")
     print("Downloading MPNN Weights")
     _ = load_mpnn_sol(0.05)
     print("SolMPNN Weights successfully cached")
+    print("Downloading Full ESMFold2 Model Weights with MSA Generation & Usage for Predicting Target Structures ")
+    _ = ESMFold2Full()
+    print("ESMFold2Full Weights have successfully been cached")
+
 
 # ---------------------------------------------------------------------------
 # Volumes
@@ -53,7 +58,7 @@ image = (
     .run_commands("uv pip install --system .")
     # Install GPU JAX last so mosaic's CPU jax dependency cannot downgrade it
     .run_commands("uv pip install --system 'jax[cuda12]' equinox scikit-learn biotite")
-    .run_function(download_boltz2_mpnn)
+    .run_function(download_model_weights)
     .env({
         "JAX_COMPILATION_CACHE_DIR": CACHE_MOUNT,
         # Ensure python finds both your local scripts (/app) and mosaic (/mosaic)
@@ -92,7 +97,7 @@ def prepare_data():
         DATA_MOUNT: data_volume,
         CACHE_MOUNT: cache_volume,
     },
-    timeout=1800, # Extended timeout for large multi-step PSSM optimization (In Seconds)
+    timeout=3600, # Extended timeout for large multi-step PSSM optimization (In Seconds)
 )
 def train():
     """Run train.py on a remote GPU. Output streams to stdout."""
