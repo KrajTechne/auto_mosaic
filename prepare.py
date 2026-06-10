@@ -119,20 +119,28 @@ def calculate_motif_rmsd(designed_array, motif_res_pos: list, motif_coords_nativ
 
     return rmsd
 
-def compute_composite_score(motif_rmsd_dict: dict, structure_iptm: float, binder_plddt: float) -> float:
+def compute_harmonic_mean(metric_a, metric_b):
+    """
+    Compute harmonic mean between common metric outputted by 2 different protein structure prediction models
+    """
+    numerator = 2 * metric_a * metric_b
+    denominator = metric_a + metric_b
+    hmean = numerator / denominator
+    return hmean
+
+def compute_composite_score(motif_rmsd_a, motif_rmsd_d, structure_iptm: float, binder_plddt: float) -> float:
     """
     Single composite score for autoresearch optimization. Lower is better.
     RMSD is normalized via 1-exp(-rmsd/1.5) so all terms are on [0,1).
     """
-    mean_rmsd = np.mean(list(motif_rmsd_dict.values()))
+    mean_rmsd = np.mean([motif_rmsd_a, motif_rmsd_d])
     rmsd_score = 1.0 - np.exp(-mean_rmsd / 1.5)
-    return (
-        2.0 * rmsd_score
-        + 1.0 * (1.0 - structure_iptm)
-        + 0.5 * (1.0 - binder_plddt)
-    )
+    composite_score =  (2.0 * rmsd_score + 1.0 * (1.0 - structure_iptm) + 0.5 * (1.0 - binder_plddt))
+    print(f"Composite Score: {composite_score:.4f}  (lower is better; target < 1.5)")
+    print("-" * 50)
+    return composite_score
 
-def evaluate_optimized_structure(model_esm2, seq_pssm, motif_id_pos: dict, design_iteration: int, recycling_steps: int = 5, sampling_steps: int = 21):
+def evaluate_optimized_structure(struc_model, seq_pssm, motif_id_pos: dict, design_iteration: int, model_name:str, recycling_steps: int = 5, sampling_steps: int = 21):
     """
     Evaluates the optimized structure by calculating the following metrics:
     1. Motif RMSD for each motif
@@ -143,18 +151,21 @@ def evaluate_optimized_structure(model_esm2, seq_pssm, motif_id_pos: dict, desig
     seq_tokenized = seq_pssm.argmax(-1)
     seq_binder = "".join(TOKENS[i] for i in seq_tokenized)
     # 2. Create features for Boltz Complex Structure Prediction
-    esm_features, esm_writer = model_esm2.target_only_features(
+    struc_model_features, struc_model_writer = struc_model.target_only_features(
         chains = [
             TargetChain(sequence = seq_binder, use_msa = False),
             TargetChain(sequence = SEQ_TARGET, use_msa = True),
         ]
     )
     # 3. Predict Boltz Structure
-    pred = model_esm2.predict(PSSM = seq_pssm, features = esm_features, writer = esm_writer, key = jax.random.key(11), 
-                              recycling_steps = recycling_steps, sampling_steps = sampling_steps)
+    if model_name == "Boltz2":
+        pred = struc_model.predict(PSSM = seq_pssm, features = struc_model_features, writer = struc_model_writer, key = jax.random.key(11))
+    elif model_name == "ESMFold2":
+        pred = struc_model.predict(PSSM = seq_pssm, features = struc_model_features, writer = struc_model_writer, key = jax.random.key(11),
+                                   recycling_steps = recycling_steps, sampling_steps = sampling_steps)
     # 4. Save outputted gemmi structure to file and open up as a Biotite atom array
     designed_structure = pred.st
-    path_designed_structure = os.path.join(DATA_DIR, f"designed_structure_{design_iteration}.pdb")
+    path_designed_structure = os.path.join(DATA_DIR, f"{model_name}_structure_{design_iteration}.pdb")
     with open(path_designed_structure, "w") as f:
         f.write(designed_structure.make_pdb_string())
     designed_array = extract_atom_array(path_designed_structure)
@@ -171,19 +182,20 @@ def evaluate_optimized_structure(model_esm2, seq_pssm, motif_id_pos: dict, desig
     # 7. Calculate Structure PLDDT
     binder_plddt = pred.plddt[:len(seq_binder)].mean()
     # 8. Display Metrics for Agent to interpret and decide next step:
-    print("-" * 50)
-    print(f"For Design Iteration: {design_iteration}")
+    print(f"Validation conducted by {model_name}:")
     print(f"You have Designed Binder Sequence: {seq_binder}")
     print("Your selection of hyperparameters has resulted in: ")
     for motif_id, rmsd in motif_rmsd_dict.items():
         print(f"Motif From Chain: {motif_id} has an associated RMSD: {rmsd:.2f}")
         print("As always, smaller RMSD is better and ideal RMSD is < 1.5 Angstroms")
-    print(f"Structure IPTM: {structure_iptm:.2f}")
-    print(f"Structure PLDDT: {binder_plddt:.2f}")
-    composite_score = compute_composite_score(motif_rmsd_dict, structure_iptm, binder_plddt)
-    print(f"Composite Score: {composite_score:.4f}  (lower is better; target < 1.5)")
-    print("-" * 50)
-    return composite_score
+    print(f"{model_name} ipTM: {structure_iptm:.2f}")
+    print(f"{model_name} pLDDT: {binder_plddt:.2f}")
+    print(" ") # Add line of empty space after every print sequence for a given model
+    # 9. Extract the Motif RMSDs
+    motif_rmsd_a = motif_rmsd_dict['A']
+    motif_rmsd_d = motif_rmsd_dict['D']
+
+    return motif_rmsd_a, motif_rmsd_d, structure_iptm, binder_plddt
 
 #--------------------------------------------------------------------------------------------------------------------
 # Main

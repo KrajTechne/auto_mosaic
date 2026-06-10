@@ -32,7 +32,7 @@ from mosaic.losses.transformations import NoCys, SetPositions, SoftClip
 from mosaic.structure_prediction import TargetChain
 from mosaic.optimizers import simplex_APGM
 
-from prepare import SEQ_TARGET, CHAIN_MOTIF, MAX_OPTIMIZER_STEPS, DATA_DIR, calculate_motif_rmsd, evaluate_optimized_structure, compute_composite_score
+from prepare import SEQ_TARGET, CHAIN_MOTIF, MAX_OPTIMIZER_STEPS, DATA_DIR, calculate_motif_rmsd, evaluate_optimized_structure, compute_composite_score, compute_harmonic_mean
 
 #-----------------------------------------------------------------------------------------------------
 # Helper Function for Loss Function
@@ -315,5 +315,23 @@ pssm_with_fixed_residues = masked_cys_loss.loss.sequence(pssm_with_cysteine)
 # --------------------------------------------------------------------------------------------------------------
 design_iteration = sum(".pdb" in x for x in os.listdir(DATA_DIR)) # Initial PDB not stored in DATA_DIR
 model_esm2 = ESMFold2Full()
-composite_score = evaluate_optimized_structure(model_esm2 = model_esm2, seq_pssm = pssm_with_fixed_residues, motif_id_pos = CHAIN_MOTIF,
-                                                                                          design_iteration = design_iteration)
+# 0. Start Prequel Print Statements:
+print("-" * 50)
+print(f"For Design Iteration: {design_iteration}")
+print(" ")  # Add empty space after output header and is also used to separate individual struc_model outputs
+# 1. Predict Structure via Boltz2
+rmsd_a_boltz, rmsd_d_boltz, iptm_boltz, plddt_boltz = evaluate_optimized_structure(struc_model = model_boltz, seq_pssm= pssm_with_fixed_residues, motif_id_pos= CHAIN_MOTIF,
+                                                                                   design_iteration = design_iteration, model_name = "Boltz2")
+# 2. Predict Structure via ESMFold2
+rmsd_a_esmfold, rmsd_d_esmfold, iptm_esmfold, plddt_esmfold = evaluate_optimized_structure(struc_model= model_esm2, seq_pssm= pssm_with_fixed_residues, motif_id_pos= CHAIN_MOTIF,
+                                                                                           design_iteration = design_iteration, model_name= "ESMFold2")
+# 3. Compute harmonic means for each model's: Boltz2 and ESMFold2 metrics: (rmsd_a, rmsd_d, iptm, plddt)
+struc_model_metrics = {'rmsd_a' : [rmsd_a_boltz, rmsd_a_esmfold],
+                       'rmsd_d' : [rmsd_d_boltz, rmsd_d_esmfold],
+                       'iptm' : [iptm_boltz, iptm_esmfold],
+                       'plddt' : [plddt_boltz, plddt_esmfold]}
+hmean_dict = {}
+for metric, metric_pair in struc_model_metrics.items():
+    metric_boltz, metric_esmfold = metric_pair
+    hmean_dict[metric] = compute_harmonic_mean(metric_a = metric_boltz, metric_b = metric_esmfold)
+composite_score = compute_composite_score(motif_rmsd_a= hmean_dict['rmsd_a'], motif_rmsd_d = hmean_dict['rmsd_d'], structure_iptm= hmean_dict['iptm'], binder_plddt= hmean_dict['plddt'])

@@ -2,7 +2,7 @@
 
 You are an expert computational protein engineer. Your task is to design an optimal scaffold that correctly places two functional motifs (from chains A and D of a protein complex) to bind to a target protein.
 
-This is done via gradient-based sequence optimization using Boltz2. You tune the hyperparameters in `train.py` to minimize the composite score. Gradient-based sequence optimization via Boltz2 outputs an optimized binder sequence, which is used alongside the original target sequence to predict a binder-target structure via ESMFold2. Structure confidence metrics: iPTM, pLDDT alongside respective motif rmsd metrics are extracted and used to compute composite score. ESMFold2 is ran with an MSA generated for the target sequence, but no MSA is generated for the binder sequence. 
+This is done via gradient-based sequence optimization using Boltz2. You tune the hyperparameters in `train.py` to minimize the composite score. Gradient-based sequence optimization via Boltz2 outputs an optimized binder sequence whose interaction with the target sequence is evaluated via both Boltz2 and ESMFold2. 
 
 ## Setup
 
@@ -41,21 +41,36 @@ The `X` linker residues are free to optimize; the motif residues are fixed. Bolt
 - Change `MAX_OPTIMIZER_STEPS` — it is defined in `prepare.py`.
 
 ## The goal
+**Maximize agreement of high-quality binder sequences between both Boltz2 (Designer) and ESMFold2 (Validator)**
+
+The inherent issue with gradient-based optimization through a protein structure prediction model (in this case Boltz2) is that the binder sequences yielded as a result of this process often have great structure confidence metrics when evaluated with the protein structure prediction model it was backpropagated through (in this case Boltz2), but poor structure confidence metrics when evaluated with a different model such as ESMFold2. This phenomenon is known as designing adversarial sequences and is a clear sign that the training setup used for gradient-based optimization is seeking to generate binder sequences which inflate confidence metrics in Boltz2, but are unrealistic as determined by the poor confidence metrics extracted from ESMFold2.
+
+To maximize this agreement, after generating a binder sequence via Boltz2, you will generate a binder-target structure via both Boltz2 and ESMFold2. In the process, you will extract metrics: pLDDT, ipTM, rmsd_A, rmsd_D from both respective binder-target structures. Then, you will generate a harmonic mean between each pair of metrics: (rmsd_a_Boltz2, rmsd_a_ESMFold2), (rmsd_d_Boltz2, rmsd_d_ESMFold2), (ipTM_Boltz2, ipTM_ESMFold2),  (pLDDT_Boltz2, pLDDT_ESMFold2).
+
+The harmonic mean is defined as for a given metric: pLDDT, ipTM, rmsd_A, rmsd_D
+
+'''
+*hmean_pLDDT is a function which takes in 2 inputs: pLDDT_Boltz2 and pLDDT_ESMFold2 and outputs: harmonic mean between the 2 scores. This harmonic mean will be generated for each of the metrics: pLDDT, ipTM, rmsd_A, rmsd_D*
+
+hmean_pLDDT(pLDDT_Boltz2, pLDDT_ESMFold2) = ((2 * pLDDT_Boltz2 * pLDDT_ESMFold2) / (pLDDT_Boltz2 + pLDDT_ESMFold2))
+
+*hmean is a short name for harmonic mean*
+'''
 
 **Minimize `composite_score` (lower is better; target < 1.5).**
 
 The composite score is defined in `prepare.py` as:
 
 ```
-composite_score = 2.0 * (1 - exp(-mean_motif_rmsd / 1.5))   # motif placement (primary)
-                + 1.0 * (1 - iPTM)                           # binding quality
-                + 0.5 * (1 - pLDDT)                          # fold confidence
+composite_score = 2.0 * (1 - exp(-((hmean_rmsd_A + hmean_rmsd_D) / 2) / 1.5))   # motif placement (primary)
+                + 1.0 * (1 - hmean_ipTM)                           # binding quality
+                + 0.5 * (1 - hmean_pLDDT)                          # fold confidence
 ```
 
 A good design has:
-- Motif RMSD < 1.5 Å for both chains (motifs are correctly placed)
-- iPTM > 0.8 (confident binding to the target)
-- pLDDT > 0.7 (the binder is well-folded)
+- hmean_rmsd < 1.5 Å for both chains: (A & D) (motifs are correctly placed)
+- hmean_ipTM > 0.7 (confident binding to the target)
+- hmean_pLDDT > 0.7 (the binder is well-folded)
 
 **Simplicity criterion**: All else being equal, simpler is better. A 0.05 score improvement that adds complex code is not worth it. Removing a loss term and getting equal or better results is a win.
 
@@ -68,17 +83,32 @@ At the end of a run, `evaluate_optimized_structure` prints:
 ```
 --------------------------------------------------
 For Design Iteration:
+
+Validation conducted by Boltz2:
 You have designed binder seq: LHSHPYWTPPYPHHERMDQRKERVRKYAFLLTKWTNEEQKEWYHRQLVIILNLSQLDMQRFVDWFGFPGERWPHTDPPLRLWWNYSLEMVKFVKQDWGCLL
 Your selection of hyperparameters has resulted in:
 Motif From Chain: A has an associated RMSD: 1.23
   As always, smaller RMSD is better and ideal RMSD is < 1.5 Angstroms
 Motif From Chain: D has an associated RMSD: 0.98
   As always, smaller RMSD is better and ideal RMSD is < 1.5 Angstroms
-Structure IPTM: 0.71
-Structure PLDDT: 0.82
+Boltz2 ipTM: 0.71
+Boltz2 pLDDT: 0.82
+
+Validation conducted by ESMFold2:
+You have designed binder seq: LHSHPYWTPPYPHHERMDQRKERVRKYAFLLTKWTNEEQKEWYHRQLVIILNLSQLDMQRFVDWFGFPGERWPHTDPPLRLWWNYSLEMVKFVKQDWGCLL
+Your selection of hyperparameters has resulted in:
+Motif From Chain: A has an associated RMSD: 1.75
+  As always, smaller RMSD is better and ideal RMSD is < 1.5 Angstroms
+Motif From Chain: D has an associated RMSD: 1.80
+  As always, smaller RMSD is better and ideal RMSD is < 1.5 Angstroms
+ESMFold2 ipTM: 0.45
+ESMFold2 pLDDT: 0.6
+
 Composite Score: 1.3245  (lower is better; target < 1.5)
 --------------------------------------------------
 ```
+
+Note: each run now saves two structures (one from Boltz2, one from ESMFold2), so `For Design Iteration` numbers will increase by 2 per run (e.g. 0, 2, 4, ...) — this is expected and not a sign of skipped iterations.
 
 Extract the key metric from the log:
 
@@ -97,26 +127,30 @@ tail -n 50 run.log
 Log each run to `results.tsv` (tab-separated — commas break in descriptions). Do NOT commit this file; leave it untracked.
 
 ```
-commit	composite_score	rmsd_A	rmsd_D	iptm  plddt  status	description
+commit	composite_score rmsd_A_Boltz2 rmsd_A_ESMFold2 rmsd_D_Boltz2 rmsd_D_ESMFold2 iptm_Boltz2 iptm_ESMFold2 plddt_Boltz2  plddt_ESMFold2  status  description
 ```
 
 1. git commit hash (short, 7 chars)
 2. composite_score (e.g. 1.3245) — use 99.0000 for crashes
-3. motif RMSD for chain A (Å) — use 99.0 for crashes
-4. motif RMSD for chain D (Å) — use 99.0 for crashes
-5. iPTM — use 0.0 for crashes
-6. pLDDT - use 0.0 for crashes
-7. status: `keep`, `discard`, or `crash`
-8. short description of what this experiment tried
+3. Boltz2 motif RMSD for chain A (Å) — use 99.0 for crashes
+4. ESMFold2 motif RMSD for chain A (Å) — use 99.0 for crashes
+5. Boltz2 motif RMSD for chain D (Å) — use 99.0 for crashes
+6. ESMFold2 motif RMSD for chain D (Å) — use 99.0 for crashes
+7. Boltz2 ipTM — use 0.0 for crashes
+8. ESMFold2 ipTM — use 0.0 for crashes
+9. Boltz2 pLDDT — use 0.0 for crashes
+10. ESMFold2 pLDDT — use 0.0 for crashes
+11. status: `keep`, `discard`, or `crash`
+12. short description of what this experiment tried
 
 Example:
 
 ```
-commit	composite_score	rmsd_A  rmsd_D  iptm  plddt status  description
-a1b2c3d	1.3245	1.23	0.98	0.71  0.65  keep	baseline
-b2c3d4e	1.1832	0.87	0.76	0.78  0.85  keep	increase motif RMSD weight to 0.3
-c3d4e5f	1.5901	2.14	1.89	0.55  0.45  discard	shorten linkers to 15-15-15
-d4e5f6g	99.0000	99.0	99.0	0.0 0.0 crash	too many optimizer steps (OOM)
+commit	composite_score	rmsd_A_Boltz2 rmsd_A_ESMFold2 rmsd_D_Boltz2 rmsd_D_ESMFold2 iptm_Boltz2 iptm_ESMFold2 plddt_Boltz2  plddt_ESMFold2  status  description
+a1b2c3d	1.3245	1.23	1.50  0.98  0.94	0.71  0.72  0.65  0.81  keep	baseline
+b2c3d4e	1.1832	0.87  0.82	0.76  0.86	0.78  0.45  0.85  0.67  keep	increase motif RMSD weight to 0.3
+c3d4e5f	1.5901	2.14  2.34  1.89  1.84  0.55  0.55  0.45  0.45  discard	shorten linkers to 15-15-15
+d4e5f6g	99.0000	99.0  99.0  99.0  99.0	99.0	0.0 0.0 0.0 0.0 crash	too many optimizer steps (OOM)
 ```
 
 ## The experiment loop
