@@ -164,14 +164,13 @@ LINKER_LEN3 = 30 # Length of linker between second motif and end of protein (C-t
 # Final loss function = sum of all loss functions weighted by their respective weights
 WEIGHT_BINDER_CONTACT_LOSS_FUNCTION = 0.5 # Weight of the binder contact loss function in the total/composite loss function
 WEIGHT_WITHIN_BINDER_CONTACT_LOSS_FUNCTION = 0.5 # Weight of the within-binder contact loss function in the total/composite loss function
-WEIGHT_INVERSE_FOLDING_SEQ_RECOVERY_LOSS_FUNCTION = 1.0 # Weight of the inverse folding sequence recovery loss function in the total/composite loss function
-WEIGHT_TARGET_BINDER_PAE_LOSS_FUNCTION = 0.5 # Weight of the target to binder (directional PAE) PAE loss function in the total/composite loss function
-WEIGHT_BINDER_TARGET_PAE_LOSS_FUNCTION = 0.5 # Weight of the binder to target (directional PAE) PAE loss function in the total/composite loss function
-WEIGHT_WITHIN_BINDER_PAE_LOSS_FUNCTION = 0.5 # Weight of the within-binder PAE loss function in the total/composite loss function
-WEIGHT_IPTM_LOSS_FUNCTION = 0.1 # Weight of the iptm loss function in the total/composite loss
-WEIGHT_PTM_ENERGY_LOSS_FUNCTION = 0.1 # Weight of the ptm energy loss function in the total/composite loss
+WEIGHT_INVERSE_FOLDING_SEQ_RECOVERY_LOSS_FUNCTION = 7.0 # Weight of the inverse folding sequence recovery loss function in the total/composite loss function
+WEIGHT_TARGET_BINDER_PAE_LOSS_FUNCTION = 0.05 # Weight of the target to binder (directional PAE) PAE loss function in the total/composite loss function
+WEIGHT_BINDER_TARGET_PAE_LOSS_FUNCTION = 0.05 # Weight of the binder to target (directional PAE) PAE loss function in the total/composite loss function
+WEIGHT_WITHIN_BINDER_PAE_LOSS_FUNCTION = 0.4 # Weight of the within-binder PAE loss function in the total/composite loss function
+WEIGHT_IPTM_LOSS_FUNCTION = 0.025 # Weight of the iptm loss function in the total/composite loss
+WEIGHT_PTM_ENERGY_LOSS_FUNCTION = 0.025 # Weight of the ptm energy loss function in the total/composite loss
 WEIGHT_PLDDT_LOSS_FUNCTION = 0.1 # Weight of the plddt loss function in the total/composite loss
-WEIGHT_HELIX_LOSS_FUNCTION = 0.3 # Weight of the helix loss function (reduce presence of alpha helices in final design) in the total/composite loss
 WEIGHT_FIRST_MOTIF_DISTOGRAM_LOSS_FUNCTION = 0.1 # Weight of the motif distogram loss function in the total/composite loss
 WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION = 0.1 # Weight of the motif rmsd loss function in the total/composite loss
 WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION = 0.1
@@ -179,28 +178,28 @@ WEIGHT_SECOND_MOTIF_RMSD_LOSS_FUNCTION = 0.1
 # Initial "soft" PSSM -> Try to sharpen PSSM into a discrete sequence (e.g. one-hot PSSM) -> Further sharpening with a "hard" PSSM
 # Optimizer Parameters: 
 soft_pssm_hyparams = {
-    'n_steps' : 100,
+    'n_steps' : 50,
     'stepsize' : 1.5,
     'momentum' : 0.3,
     'scale'    : 1.00,
     'logspace' : False,
 }
 sharp_pssm_hyparams = {
-    'n_steps' : 50,
+    'n_steps' : 40,
     'stepsize' : 3.5,
     'momentum' : 0.0,
     'scale'    : 1.25,
     'logspace' : True
 }
 hard_pssm_hyparams = {
-    'n_steps' : 15,
+    'n_steps' : 10,
     'stepsize' : 3.5,
     'momentum' : 0.0,
     'scale'    : 1.40,
     'logspace' : True
 }
 
-# If total number of pssm steps is > 165, raise error
+# If total number of pssm steps is > 100, raise error
 if soft_pssm_hyparams['n_steps'] + sharp_pssm_hyparams['n_steps'] + hard_pssm_hyparams['n_steps'] > MAX_OPTIMIZER_STEPS:
     raise ValueError(f"Total number of PSSM steps is greater than {MAX_OPTIMIZER_STEPS}. Please reduce the number of steps such that the total number of steps is less than or equal to {MAX_OPTIMIZER_STEPS}.")
 # ------------------------------------------------------------------------------------------------------------
@@ -240,8 +239,7 @@ structure_prediction_loss = ((WEIGHT_BINDER_CONTACT_LOSS_FUNCTION * sp.BinderTar
                              + (WEIGHT_WITHIN_BINDER_PAE_LOSS_FUNCTION * sp.WithinBinderPAE()) 
                              + (WEIGHT_IPTM_LOSS_FUNCTION * sp.IPTMLoss()) 
                              + (WEIGHT_PTM_ENERGY_LOSS_FUNCTION * sp.pTMEnergy()) 
-                             + (WEIGHT_PLDDT_LOSS_FUNCTION * sp.PLDDTLoss())
-                             + (WEIGHT_HELIX_LOSS_FUNCTION * sp.HelixLoss()))
+                             + (WEIGHT_PLDDT_LOSS_FUNCTION * sp.PLDDTLoss()))
 # 5.2, define motif-specific loss functions for each motif
 motif_first_loss = ((WEIGHT_FIRST_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_first, motif_first_indices)) + (WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION * MotifRMSDLoss(motif_ca_coords_first, motif_first_indices)))
 motif_second_loss = ((WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_second, motif_second_indices)) + (WEIGHT_SECOND_MOTIF_RMSD_LOSS_FUNCTION * MotifRMSDLoss(motif_ca_coords_second, motif_second_indices)))
