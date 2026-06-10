@@ -57,6 +57,8 @@ hmean_pLDDT(pLDDT_Boltz2, pLDDT_ESMFold2) = ((2 * pLDDT_Boltz2 * pLDDT_ESMFold2)
 *hmean is a short name for harmonic mean*
 '''
 
+`composite_score` is built directly from these harmonic means, so minimizing it is equivalent to maximizing Boltz2/ESMFold2 agreement while also requiring strong absolute metrics — it is the single number to track each iteration.
+
 **Minimize `composite_score` (lower is better; target < 1.5).**
 
 The composite score is defined in `prepare.py` as:
@@ -103,6 +105,12 @@ Motif From Chain: D has an associated RMSD: 1.80
   As always, smaller RMSD is better and ideal RMSD is < 1.5 Angstroms
 ESMFold2 ipTM: 0.45
 ESMFold2 pLDDT: 0.6
+
+Harmonic Means (Boltz2 <-> ESMFold2 agreement):
+hmean_rmsd_A: 1.44
+hmean_rmsd_D: 1.27
+hmean_ipTM: 0.55
+hmean_pLDDT: 0.69
 
 Composite Score: 1.3245  (lower is better; target < 1.5)
 --------------------------------------------------
