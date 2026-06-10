@@ -332,4 +332,11 @@ hmean_dict = {}
 for metric, metric_pair in struc_model_metrics.items():
     metric_boltz, metric_esmfold = metric_pair
     hmean_dict[metric] = compute_harmonic_mean(metric_a = metric_boltz, metric_b = metric_esmfold)
+# 4. Display harmonic means (Boltz2 <-> ESMFold2 agreement) for the Agent to interpret
+print("Harmonic Means (Boltz2 <-> ESMFold2 agreement):")
+print(f"hmean_rmsd_A: {hmean_dict['rmsd_a']:.2f}")
+print(f"hmean_rmsd_D: {hmean_dict['rmsd_d']:.2f}")
+print(f"hmean_ipTM: {hmean_dict['iptm']:.2f}")
+print(f"hmean_pLDDT: {hmean_dict['plddt']:.2f}")
+print(" ")
 composite_score = compute_composite_score(motif_rmsd_a= hmean_dict['rmsd_a'], motif_rmsd_d = hmean_dict['rmsd_d'], structure_iptm= hmean_dict['iptm'], binder_plddt= hmean_dict['plddt'])
