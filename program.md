@@ -30,9 +30,30 @@ The `X` linker residues are free to optimize; the motif residues are fixed. Bolt
 ## What you can tune in `train.py`
 
 - **Linker lengths**: `LINKER_LEN1`, `LINKER_LEN2`, `LINKER_LEN3` — controls binder length and motif spacing. Total binder length = LINKER_LEN1 + 6 + LINKER_LEN2 + 5 + LINKER_LEN3.
-- **Loss function weights**: the 13 `WEIGHT_*` constants controlling the relative contribution of each term (binder contact, PAE, iPTM, pLDDT, motif distogram, motif RMSD, etc.).
+- **Loss function weights**: the 14 `WEIGHT_*` constants controlling the relative contribution of each term (binder contact, PAE, iPTM, pLDDT, anti-helix, motif distogram, motif RMSD, etc.).
 - **Optimizer hyperparameters**: `soft_pssm_hyparams`, `sharp_pssm_hyparams`, `hard_pssm_hyparams` — each controls `n_steps`, `stepsize`, `momentum`, `scale`, and `logspace` for that stage. Total steps across all three stages must not exceed `MAX_OPTIMIZER_STEPS` (100).
 - **Motif chain order**: `MOTIF_CHAIN_ORDER` — controls which motif appears first in the binder sequence.
+
+## Loss Function Reference
+
+Output ranges below are for the underlying `LossTerm` *before* the `WEIGHT_*` multiplier is applied, sourced from the `mosaic` library (escalante-bio/mosaic, `src/mosaic/losses/`). Some ranges (marked) are theoretically unbounded and would benefit from empirical confirmation. Append observations to the last column as new loops complete.
+
+| `WEIGHT_*` constant | Loss term | What it measures | Output range (pre-weight) | Observations from past loops |
+|---|---|---|---|---|
+| `WEIGHT_BINDER_CONTACT_LOSS_FUNCTION` | `sp.BinderTargetContact` | Avg. log-prob of binder↔target contacts (top-3 contacts/binder residue, ≤20 Å) | (−∞, 0] | — |
+| `WEIGHT_WITHIN_BINDER_CONTACT_LOSS_FUNCTION` | `sp.WithinBinderContact` | Avg. log-prob of intra-binder contacts (top-k/residue beyond min sequence separation) | (−∞, 0] | — |
+| `WEIGHT_INVERSE_FOLDING_SEQ_RECOVERY_LOSS_FUNCTION` | `InverseFoldingSequenceRecovery` | Negative dot product between the binder PSSM and ProteinMPNN's average predicted sequence ("designability" / sequence recovery) | [−1, 0] | -- |
+| `WEIGHT_TARGET_BINDER_PAE_LOSS_FUNCTION` | `sp.TargetBinderPAE` | Mean PAE (Å), target→binder block | [0, 32] | — |
+| `WEIGHT_BINDER_TARGET_PAE_LOSS_FUNCTION` | `sp.BinderTargetPAE` | Mean PAE (Å), binder→target block | [0, 32] | — |
+| `WEIGHT_WITHIN_BINDER_PAE_LOSS_FUNCTION` | `sp.WithinBinderPAE` | Mean PAE (Å) within the binder (off-diagonal) | [0, 32] | — |
+| `WEIGHT_IPTM_LOSS_FUNCTION` | `sp.IPTMLoss` | Negative interface pTM (predicted TM-score over inter-chain residue pairs) | [−1, 0] | — |
+| `WEIGHT_PTM_ENERGY_LOSS_FUNCTION` | `sp.pTMEnergy` | Negative log-space "TM energy" averaged over inter-chain pairs | (−∞, ∞), typically small magnitude (unconfirmed) | — |
+| `WEIGHT_PLDDT_LOSS_FUNCTION` | `sp.PLDDTLoss` | Negative mean pLDDT over binder positions (pLDDT on a 0-1 scale) | [−1, 0] | — |
+| `WEIGHT_ANTI_HELIX_LOSS_FUNCTION` | `AntiHelixLoss` (train.py) | `elu(target_value + value)`, where `value` = mean i,i+3 contact log-probability (≈0 if alpha-helix-dominant, → −∞ if extended/beta-dominant). `target_value=0.0` (parameter-free). Penalizes helical character; bounded reward for beta/extended character. | (−1, 0] | New, untested. Added because motif A (LTKWTN) is confirmed to be a beta strand and has the persistent ~1.9Å hmean RMSD gap — hypothesis is the all-helix scaffold can't seat it correctly. |
+| `WEIGHT_FIRST_MOTIF_DISTOGRAM_LOSS_FUNCTION` | `MotifDistogramCE` (train.py) | Cross-entropy between predicted and native distogram, restricted to motif A's M×M block | [0, ∞) | Increased 0.1→0.3 (`47725a1`): composite 1.6290→2.0830 (discarded). Boltz2 ipTM stayed high (0.90) but ESMFold2 ipTM dropped to 0.25 — Boltz2/ESMFold2 divergence. |
+| `WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION` | `MotifRMSDLoss` (train.py) | Kabsch-aligned Cα RMSD (Å), predicted vs. native motif A | [0, ∞) | Increased 0.1→0.3 (`7939d87`): composite 1.6290→2.4721 (discarded). Boltz2 ipTM stayed high (0.93) but ESMFold2 ipTM collapsed to 0.09 — strongest divergence seen so far. |
+| `WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION` | `MotifDistogramCE` (train.py) | Cross-entropy between predicted and native distogram, restricted to motif D's M×M block | [0, ∞) | Not yet isolated. |
+| `WEIGHT_SECOND_MOTIF_RMSD_LOSS_FUNCTION` | `MotifRMSDLoss` (train.py) | Kabsch-aligned Cα RMSD (Å), predicted vs. native motif D | [0, ∞) | Not yet isolated. |
 
 ## What you cannot do
 
