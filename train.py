@@ -148,8 +148,42 @@ class MotifRMSDLoss(LossTerm):
         
         msd = jnp.mean(jnp.sum((P_aligned - T) ** 2, axis=-1))
         rmsd = jnp.sqrt(msd + 1e-8)
-        
+
         return rmsd, {self.name: rmsd}
+
+class AntiHelixLoss(LossTerm):
+    """
+    Penalizes excess alpha-helical content in the binder scaffold to encourage
+    a mix of secondary structures (e.g. beta strands), using mosaic's i,i+3
+    contact-probability signature with the inequality reversed relative to
+    mosaic's HelixLoss.
+    """
+    max_distance: float = 6.0
+    target_value: float = 0.0
+    name: str = "anti_helix"
+
+    def __call__(
+        self,
+        sequence: Float[Array, "N 20"],
+        output: StructureModelOutput,
+        key,
+    ):
+        # 1. Restrict to the binder-binder block of the distogram
+        binder_len = sequence.shape[0]
+
+        # 2. Log-probability that residues i and i+3 are in contact (<= max_distance).
+        #    ~0 => alpha-helix-like (i,i+3 almost always close); -> -inf => extended/beta-like
+        log_contact = sp.contact_log_probability(
+            output.distogram_logits[:binder_len, :binder_len],
+            self.max_distance,
+            bins=output.distogram_bins,
+        )
+        value = jnp.diagonal(log_contact, 3).mean()
+
+        # 3. Penalize helical character (value near 0); bounded reward as value -> -inf
+        loss = jax.nn.elu(self.target_value + value)
+
+        return loss, {self.name: loss}
 # -----------------------------------------------------------------------------------------
 # Hyperparameters (edit these directly, no CLI flags needed)
 # -----------------------------------------------------------------------------------------
@@ -164,13 +198,14 @@ LINKER_LEN3 = 30 # Length of linker between second motif and end of protein (C-t
 # Final loss function = sum of all loss functions weighted by their respective weights
 WEIGHT_BINDER_CONTACT_LOSS_FUNCTION = 0.5 # Weight of the binder contact loss function in the total/composite loss function
 WEIGHT_WITHIN_BINDER_CONTACT_LOSS_FUNCTION = 0.5 # Weight of the within-binder contact loss function in the total/composite loss function
-WEIGHT_INVERSE_FOLDING_SEQ_RECOVERY_LOSS_FUNCTION = 7.0 # Weight of the inverse folding sequence recovery loss function in the total/composite loss function
+WEIGHT_INVERSE_FOLDING_SEQ_RECOVERY_LOSS_FUNCTION = 9.0 # Weight of the inverse folding sequence recovery loss function in the total/composite loss function
 WEIGHT_TARGET_BINDER_PAE_LOSS_FUNCTION = 0.05 # Weight of the target to binder (directional PAE) PAE loss function in the total/composite loss function
 WEIGHT_BINDER_TARGET_PAE_LOSS_FUNCTION = 0.05 # Weight of the binder to target (directional PAE) PAE loss function in the total/composite loss function
 WEIGHT_WITHIN_BINDER_PAE_LOSS_FUNCTION = 0.4 # Weight of the within-binder PAE loss function in the total/composite loss function
 WEIGHT_IPTM_LOSS_FUNCTION = 0.025 # Weight of the iptm loss function in the total/composite loss
 WEIGHT_PTM_ENERGY_LOSS_FUNCTION = 0.025 # Weight of the ptm energy loss function in the total/composite loss
-WEIGHT_PLDDT_LOSS_FUNCTION = 0.1 # Weight of the plddt loss function in the total/composite loss
+WEIGHT_PLDDT_LOSS_FUNCTION = 0.025 # Weight of the plddt loss function in the total/composite loss
+WEIGHT_ANTI_HELIX_LOSS_FUNCTION = 0.1 # Weight of the anti-helix loss function (penalizes excess alpha-helical content, encourages mixed secondary structure) in the total/composite loss
 WEIGHT_FIRST_MOTIF_DISTOGRAM_LOSS_FUNCTION = 0.1 # Weight of the motif distogram loss function in the total/composite loss
 WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION = 0.1 # Weight of the motif rmsd loss function in the total/composite loss
 WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION = 0.1
@@ -239,7 +274,8 @@ structure_prediction_loss = ((WEIGHT_BINDER_CONTACT_LOSS_FUNCTION * sp.BinderTar
                              + (WEIGHT_WITHIN_BINDER_PAE_LOSS_FUNCTION * sp.WithinBinderPAE()) 
                              + (WEIGHT_IPTM_LOSS_FUNCTION * sp.IPTMLoss()) 
                              + (WEIGHT_PTM_ENERGY_LOSS_FUNCTION * sp.pTMEnergy()) 
-                             + (WEIGHT_PLDDT_LOSS_FUNCTION * sp.PLDDTLoss()))
+                             + (WEIGHT_PLDDT_LOSS_FUNCTION * sp.PLDDTLoss())
+                             + (WEIGHT_ANTI_HELIX_LOSS_FUNCTION * AntiHelixLoss()))
 # 5.2, define motif-specific loss functions for each motif
 motif_first_loss = ((WEIGHT_FIRST_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_first, motif_first_indices)) + (WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION * MotifRMSDLoss(motif_ca_coords_first, motif_first_indices)))
 motif_second_loss = ((WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_second, motif_second_indices)) + (WEIGHT_SECOND_MOTIF_RMSD_LOSS_FUNCTION * MotifRMSDLoss(motif_ca_coords_second, motif_second_indices)))
