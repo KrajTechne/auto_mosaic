@@ -92,7 +92,7 @@ def prepare_data():
 
 
 @app.function(
-    gpu="H100",
+    gpu="L40S",
     volumes={
         DATA_MOUNT: data_volume,
         CACHE_MOUNT: cache_volume,
