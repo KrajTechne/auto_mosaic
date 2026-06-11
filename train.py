@@ -190,9 +190,9 @@ class AntiHelixLoss(LossTerm):
 
 # Define Lengths of Linkers between Motifs
 MOTIF_CHAIN_ORDER = ['A', 'D'] # Chain IDs of the two motifs (MUST ALWAYS INCLUDE BOTH "A" & "D". Free to change order)
-LINKER_LEN1 = 30 # Length of linker from start of protein (N-terminus) to first motif
-LINKER_LEN2 = 30 # Length of linker between first and second motif
-LINKER_LEN3 = 30 # Length of linker between second motif and end of protein (C-terminus)
+LINKER_LEN1 = 50 # Length of linker from start of protein (N-terminus) to first motif
+LINKER_LEN2 = 50 # Length of linker between first and second motif
+LINKER_LEN3 = 50 # Length of linker between second motif and end of protein (C-terminus)
 
 # Define weights of the respective loss functions in the final total/composite loss function
 # Final loss function = sum of all loss functions weighted by their respective weights
