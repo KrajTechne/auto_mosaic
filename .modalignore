@@ -2,3 +2,4 @@ run.log
 results.tsv
 __pycache__/
 .git/
+.claude
