@@ -104,13 +104,18 @@ class MotifDistogramCE(LossTerm):
 
         return ce.clip(self.l, self.u), {self.name: ce}
 
-class MotifRMSDLoss(LossTerm):
+class JointMotifRMSDLoss(LossTerm):
     """
-    Penalizes absolute structural deviation of the designed motif 
-    from the target backbone motif using the ColabDesign Kabsch alignment.
+    Penalizes structural deviation of one motif from its native backbone,
+    using a single Kabsch alignment fit jointly over both motifs' Ca
+    coordinates (rather than aligning each motif independently). This ties
+    each motif's RMSD to the relative position/orientation of the two
+    motifs, not just its own local fold.
     """
-    target_coords: Float[Array, "M 3"]  # Native Ca coordinates of the motif
-    motif_positions: Int[Array, "M"]    # Sequence indices of the motif
+    target_coords_self: Float[Array, "M 3"]   # Native Ca coordinates of this motif
+    motif_positions_self: Int[Array, "M"]     # Sequence indices of this motif
+    target_coords_other: Float[Array, "K 3"]  # Native Ca coordinates of the other motif
+    motif_positions_other: Int[Array, "K"]    # Sequence indices of the other motif
     name: str = "motif_rmsd"
 
     def __call__(
@@ -119,34 +124,35 @@ class MotifRMSDLoss(LossTerm):
         output: StructureModelOutput,
         key,
     ):
-        # 1. Extract Predicted C-alpha coordinates for the motif (Index 1 is CA)
-        pred_coords = output.backbone_coordinates[self.motif_positions, 1, :]
-        
-        P = pred_coords
-        T = self.target_coords
-        
-        # 2. Center both sets of coordinates to the origin
+        # 1. Extract Predicted C-alpha coordinates for both motifs (Index 1 is CA)
+        pred_self = output.backbone_coordinates[self.motif_positions_self, 1, :]
+        pred_other = output.backbone_coordinates[self.motif_positions_other, 1, :]
+
+        P = jnp.concatenate([pred_self, pred_other], axis=0)
+        T = jnp.concatenate([self.target_coords_self, self.target_coords_other], axis=0)
+
+        # 2. Center both sets of coordinates on their joint centroid
         P_mu = P.mean(axis=0)
         T_mu = T.mean(axis=0)
         P_c = P - P_mu
         T_c = T - T_mu
-        
-        # 3. ColabDesign's Kabsch logic (pure JAX)
+
+        # 3. ColabDesign's Kabsch logic (pure JAX), fit jointly over both motifs
         ab = jnp.swapaxes(P_c, -1, -2) @ T_c
         u, s, vh = jnp.linalg.svd(ab, full_matrices=False)
-        
+
         # Reflection check
         flip = jnp.linalg.det(u @ vh) < 0
         u_ = jnp.where(flip, -u[..., -1].T, u[..., -1].T).T
         u = u.at[..., -1].set(u_)
-        
+
         # Alignment matrix
         R = u @ vh
-        
-        # 4. Apply alignment and compute RMSD
-        P_aligned = (P_c @ R) + T_mu
-        
-        msd = jnp.mean(jnp.sum((P_aligned - T) ** 2, axis=-1))
+
+        # 4. Apply the joint alignment to this motif's coordinates and compute RMSD
+        pred_self_aligned = ((pred_self - P_mu) @ R) + T_mu
+
+        msd = jnp.mean(jnp.sum((pred_self_aligned - self.target_coords_self) ** 2, axis=-1))
         rmsd = jnp.sqrt(msd + 1e-8)
 
         return rmsd, {self.name: rmsd}
@@ -277,8 +283,8 @@ structure_prediction_loss = ((WEIGHT_BINDER_CONTACT_LOSS_FUNCTION * sp.BinderTar
                              + (WEIGHT_PLDDT_LOSS_FUNCTION * sp.PLDDTLoss())
                              + (WEIGHT_ANTI_HELIX_LOSS_FUNCTION * AntiHelixLoss()))
 # 5.2, define motif-specific loss functions for each motif
-motif_first_loss = ((WEIGHT_FIRST_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_first, motif_first_indices)) + (WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION * MotifRMSDLoss(motif_ca_coords_first, motif_first_indices)))
-motif_second_loss = ((WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_second, motif_second_indices)) + (WEIGHT_SECOND_MOTIF_RMSD_LOSS_FUNCTION * MotifRMSDLoss(motif_ca_coords_second, motif_second_indices)))
+motif_first_loss = ((WEIGHT_FIRST_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_first, motif_first_indices)) + (WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION * JointMotifRMSDLoss(motif_ca_coords_first, motif_first_indices, motif_ca_coords_second, motif_second_indices)))
+motif_second_loss = ((WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_second, motif_second_indices)) + (WEIGHT_SECOND_MOTIF_RMSD_LOSS_FUNCTION * JointMotifRMSDLoss(motif_ca_coords_second, motif_second_indices, motif_ca_coords_first, motif_first_indices)))
 
 # 5.3, define composite loss function for entire binder-target complex and motifs
 loss_fn = structure_prediction_loss + motif_first_loss + motif_second_loss
