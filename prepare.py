@@ -14,7 +14,7 @@ import time
 import math
 import argparse
 import pickle
-
+import gemmi
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -42,7 +42,7 @@ PATH_INPUT_STRUCTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 CHAIN_MOTIF = {
     'A' : {'pos_native' : [107,108,109,110,111,112] , 'seq' : "LTKWTN"}, # (Alternate A Motif: 61-67)
     #'B' : {'pos' : [96,97,98,99,100,101,102,103,104,105], 'seq' : "TVMVVKPDRI"},
-    'D' : {'pos_native' : [8,9,10,11,12], 'seq' : "FPGER"}
+    'D' : {'pos_native' : [7,8,9,10,11,12], 'seq' : "GFPGER"}
 }
 SEQ_TARGET= "LIDVVVVCDESNSIYPWDAVKNFLEKFVQGLDIGPTKTQVGLIQYANNPRVVFNLNTYKTKEEMIVATSQTSQYGGDLTNTFGAIQYARKYAYSAASGGRRSATKVMVVVTDGESHDGSMLKAVIDQCNHDNILRFGIAVLGYLNRNALDTKNLIKEIKAIASIPTERYFFNVSDEAALLEKAGTLGEQIFSI"
 
@@ -94,6 +94,49 @@ def extract_motif_ca(atom_array, chain_id: str):
     path_save_ca_coords = os.path.join(DATA_DIR, f"motif_ca_coords_{chain_id}.npy")
     np.save(path_save_ca_coords, motif_ca_coords)
     return path_save_ca_coords
+
+def generate_template_motif_annotation(chain_motif: dict, path_input_structure: str, chain: str):
+    """
+    Goal is to extract the motif coordinates and annotation from the original structure complex and feed it in the same order as the new proposed binder sequence
+    This will result in a template structure where the motif coordinates are provided at expected residue indices in the binder seq and gaps where the model will hallucinate the remaining scaffold
+    Literature from conference paper: MotifCraft & Backprop Beats Generative Modelling for Motif Scaffolding support claim of providing initial template is critical for motif scaffolding
+    Template must be of same size as binder sequence and have coordinates with residue mapping at the proposed binder seq
+
+    Function will generate the correct atom_array_motif annotation for one motif and must be merged with other motif's annotation if present
+    """
+    atom_array_complex = extract_atom_array(path_input_structure)
+    # Extract the motif from the input structure atom array
+    pos_og = chain_motif[chain]['pos_native']
+    atom_array_chain = atom_array_complex[atom_array_complex.chain_id == chain]
+    atom_array_motif = atom_array_chain[np.isin(atom_array_chain.res_id, pos_og)]
+
+    # Make following changes to motif: Set chain name to A, update position to new positions
+    pos_new = chain_motif[chain]['pos_design']
+    atom_array_motif.chain_id[:] = "A" # Broadcast "A" chain id to all atoms in the motif
+    motif_atom_res_id = struc.spread_residue_wise(atom_array_motif, pos_new)
+    atom_array_motif.res_id[:] = motif_atom_res_id
+
+    return atom_array_motif
+
+def extract_gemmi_chain(atom_array_template, desired_chain: str = "A"):
+    """
+    Save atom_array_template to PDB File and use gemmi to read saved PDB File to extract desired chain in Gemmi Format 
+    """
+
+    # 1. Save atom_array_template to pdb path specified
+    pdb_save_path = "atom_array_template.pdb"
+    pdb_file = pdb.PDBFile()
+    pdb_file.set_structure(atom_array_template)
+    pdb_file.write(pdb_save_path)
+
+    # 2. Read gemmi structure and extract gemmi binder chain
+    structure = gemmi.read_structure(pdb_save_path)
+    model = structure[0]
+    gemmi_chain_desired = model[desired_chain]
+
+    return gemmi_chain_desired
+
+
 #------------------------------------------------------------------------------------------------------------------------------------
 #----------------------------------- Evaluate Designed Structure (DO NOT CHANGE THIS! - It is a fixed metric) -----------------------
 #------------------------------------------------------------------------------------------------------------------------------------
@@ -125,8 +168,9 @@ def compute_harmonic_mean(metric_a, metric_b):
     """
     numerator = 2 * metric_a * metric_b
     denominator = metric_a + metric_b
-    hmean = numerator / denominator
-    return hmean
+    if denominator == 0:
+        return 0.0
+    return numerator / denominator
 
 def compute_composite_score(motif_rmsd_a, motif_rmsd_d, structure_iptm: float, binder_plddt: float) -> float:
     """

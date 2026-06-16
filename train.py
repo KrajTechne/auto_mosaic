@@ -16,6 +16,11 @@ import numpy as np
 import sklearn.metrics
 from sklearn.metrics.pairwise import pairwise_distances
 
+import biotite
+import biotite.structure as struc
+import biotite.structure.io.pdb as pdb
+import biotite.structure.io.pdbx as pdbx
+
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
@@ -32,7 +37,7 @@ from mosaic.losses.transformations import NoCys, SetPositions, SoftClip
 from mosaic.structure_prediction import TargetChain
 from mosaic.optimizers import simplex_APGM
 
-from prepare import SEQ_TARGET, CHAIN_MOTIF, MAX_OPTIMIZER_STEPS, DATA_DIR, calculate_motif_rmsd, evaluate_optimized_structure, compute_composite_score, compute_harmonic_mean
+from prepare import SEQ_TARGET, CHAIN_MOTIF, MAX_OPTIMIZER_STEPS, DATA_DIR, PATH_INPUT_STRUCTURE, calculate_motif_rmsd, evaluate_optimized_structure, compute_composite_score, compute_harmonic_mean, generate_template_motif_annotation, extract_gemmi_chain
 
 #-----------------------------------------------------------------------------------------------------
 # Helper Function for Loss Function
@@ -213,9 +218,9 @@ WEIGHT_PTM_ENERGY_LOSS_FUNCTION = 0.025 # Weight of the ptm energy loss function
 WEIGHT_PLDDT_LOSS_FUNCTION = 0.025 # Weight of the plddt loss function in the total/composite loss
 WEIGHT_ANTI_HELIX_LOSS_FUNCTION = 0.1 # Weight of the anti-helix loss function (penalizes excess alpha-helical content, encourages mixed secondary structure) in the total/composite loss
 WEIGHT_FIRST_MOTIF_DISTOGRAM_LOSS_FUNCTION = 0.1 # Weight of the motif distogram loss function in the total/composite loss
-WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION = 0.1 # Weight of the motif rmsd loss function in the total/composite loss
+WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION = 3.0 # Weight of the motif rmsd loss function in the total/composite loss
 WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION = 0.1
-WEIGHT_SECOND_MOTIF_RMSD_LOSS_FUNCTION = 0.1
+WEIGHT_SECOND_MOTIF_RMSD_LOSS_FUNCTION = 3.0
 # Initial "soft" PSSM -> Try to sharpen PSSM into a discrete sequence (e.g. one-hot PSSM) -> Further sharpening with a "hard" PSSM
 # Optimizer Parameters: 
 soft_pssm_hyparams = {
@@ -263,15 +268,25 @@ CHAIN_MOTIF[MOTIF_CHAIN_ORDER[1]]['pos_design'] = list(range(binder_seq.find(CHA
                                                              binder_seq.find(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[1]]['seq']) + len(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[1]]['seq'])))
 motif_first_indices = jnp.array(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[0]]['pos_design'])
 motif_second_indices = jnp.array(CHAIN_MOTIF[MOTIF_CHAIN_ORDER[1]]['pos_design'])
-# 4. Load in Initial Models
+
+# 4. Create template structure for binder_seq
+list_atom_array_motifs = []
+for chain in MOTIF_CHAIN_ORDER:
+    atom_array_motif = generate_template_motif_annotation(chain_motif = CHAIN_MOTIF, path_input_structure= PATH_INPUT_STRUCTURE, chain= chain)
+    list_atom_array_motifs.append(atom_array_motif)
+
+atom_array_template = struc.concatenate(list_atom_array_motifs)
+gemmi_binder_chain = extract_gemmi_chain(atom_array_template= atom_array_template)
+
+# 5. Load in Initial Models
 model_boltz = Boltz2()
 model_mpnn = load_mpnn_sol(0.05)
 
-# 5. Define composite loss function
+# 6. Define composite loss function
 BINDER_LENGTH = len(binder_seq)
 bias = (jnp.zeros((BINDER_LENGTH, 20)).at[:BINDER_LENGTH, TOKENS.index('C')].set(-1e6))
 
-# 5.1, define loss function for structure prediction of entire binder-target complex
+# 6.1, define loss function for structure prediction of entire binder-target complex
 structure_prediction_loss = ((WEIGHT_BINDER_CONTACT_LOSS_FUNCTION * sp.BinderTargetContact()) 
                              + (WEIGHT_WITHIN_BINDER_CONTACT_LOSS_FUNCTION * sp.WithinBinderContact()) 
                              + (WEIGHT_INVERSE_FOLDING_SEQ_RECOVERY_LOSS_FUNCTION * InverseFoldingSequenceRecovery(model_mpnn, temp = jnp.array(0.001), bias = bias)) 
@@ -282,15 +297,16 @@ structure_prediction_loss = ((WEIGHT_BINDER_CONTACT_LOSS_FUNCTION * sp.BinderTar
                              + (WEIGHT_PTM_ENERGY_LOSS_FUNCTION * sp.pTMEnergy()) 
                              + (WEIGHT_PLDDT_LOSS_FUNCTION * sp.PLDDTLoss())
                              + (WEIGHT_ANTI_HELIX_LOSS_FUNCTION * AntiHelixLoss()))
-# 5.2, define motif-specific loss functions for each motif
+# 6.2, define motif-specific loss functions for each motif
 motif_first_loss = ((WEIGHT_FIRST_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_first, motif_first_indices)) + (WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION * JointMotifRMSDLoss(motif_ca_coords_first, motif_first_indices, motif_ca_coords_second, motif_second_indices)))
 motif_second_loss = ((WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_second, motif_second_indices)) + (WEIGHT_SECOND_MOTIF_RMSD_LOSS_FUNCTION * JointMotifRMSDLoss(motif_ca_coords_second, motif_second_indices, motif_ca_coords_first, motif_first_indices)))
 
-# 5.3, define composite loss function for entire binder-target complex and motifs
+# 6.3, define composite loss function for entire binder-target complex and motifs
 loss_fn = structure_prediction_loss + motif_first_loss + motif_second_loss
 
-# 5.4, establish loss function derived from Boltz2 Model
-features, _ = model_boltz.binder_features(binder_length = BINDER_LENGTH, chains = [TargetChain(sequence = SEQ_TARGET, use_msa = True)])
+# 6.4, establish loss function derived from Boltz2 Model
+features, _ = model_boltz.target_only_features(
+    chains = [TargetChain(sequence = binder_seq, use_msa = False, template_chain = gemmi_binder_chain), TargetChain(sequence = SEQ_TARGET, use_msa = True)])
 
 loss_fn_boltz = model_boltz.build_multisample_loss(
     loss = loss_fn,
@@ -299,10 +315,10 @@ loss_fn_boltz = model_boltz.build_multisample_loss(
     num_samples = 4
 )
 
-# 5.5, Add Wrapper around the Boltz Loss Function such that gradients only flow through "X" residues or mutable residues
+# 6.5, Add Wrapper around the Boltz Loss Function such that gradients only flow through "X" residues or mutable residues
 masked_loss = SetPositions.from_sequence(wildtype = binder_seq, loss = loss_fn_boltz)
 
-# 5.6 Add NoCys Wrapper around the Masked Positions & Boltz Loss Function to ensure "Cys" are not sampled as binder residues
+# 6.6 Add NoCys Wrapper around the Masked Positions & Boltz Loss Function to ensure "Cys" are not sampled as binder residues
 masked_cys_loss = NoCys(masked_loss) 
 
 #-------------------------------------------------------------------------------------------------------------------------------------------------------------------
