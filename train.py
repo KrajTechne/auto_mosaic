@@ -195,6 +195,62 @@ class AntiHelixLoss(LossTerm):
         loss = jax.nn.elu(self.target_value + value)
 
         return loss, {self.name: loss}
+
+class SheetBiasLoss(LossTerm):
+    """
+    Rewards beta-sheet content in the binder scaffold by encouraging the
+    strand-strand contact ladder pattern: if residues i,j are in contact,
+    (i+2, j+2) should also be in contact (parallel strands) and/or
+    (i+2, j-2) should be in contact (antiparallel strands).
+    Minimizing this loss (which returns a negative sheet score) maximizes
+    beta-sheet character. Adapted from bjing2016/switchcraft SheetBiasLoss.
+    """
+    max_distance: float = 6.0
+    min_seq_sep: int = 5
+    name: str = "sheet_bias"
+
+    def __call__(
+        self,
+        sequence: Float[Array, "N 20"],
+        output: StructureModelOutput,
+        key,
+    ):
+        binder_len = sequence.shape[0]
+        shift = 2
+
+        # Log contact probabilities for the binder-binder block — stay in log space
+        # to avoid double-suppressed gradients from the probability product x[i,j]*x[i+2,j+2]
+        log_x = sp.contact_log_probability(
+            output.distogram_logits[:binder_len, :binder_len],
+            self.max_distance,
+            bins=output.distogram_bins,
+        )  # (L, L), values in (-inf, 0]
+
+        L = binder_len
+        i_idx = jnp.arange(L)
+        sep_mask = (jnp.abs(i_idx[:, None] - i_idx[None, :]) >= self.min_seq_sep).astype(jnp.float32)
+
+        eps = 1e-8
+
+        # log(joint contact prob) = log_x[i,j] + log_x[i+2,j+2] — no exp, no underflow
+        log_par_ladder = log_x[:L - shift, :L - shift] + log_x[shift:, shift:]
+        log_anti_ladder = log_x[:L - shift, shift:] + log_x[shift:, :L - shift]
+
+        par_m = sep_mask[:L - shift, :L - shift]
+        anti_m = sep_mask[:L - shift, shift:]
+
+        # Numerically stable mean via logsumexp: log(mean joint contact prob)
+        par_score = jax.nn.logsumexp(jnp.where(par_m > 0, log_par_ladder, -jnp.inf).ravel()) - jnp.log(par_m.sum() + eps)
+        anti_score = jax.nn.logsumexp(jnp.where(anti_m > 0, log_anti_ladder, -jnp.inf).ravel()) - jnp.log(anti_m.sum() + eps)
+
+        sheet_score = 0.5 * (par_score + anti_score)  # in (-inf, 0], higher = more sheets
+
+        # Stay in log space: loss in [0, inf), lower = more sheets
+        # Gradient is O(1) via logsumexp softmax — not suppressed by exp(sheet_score)
+        loss = -sheet_score
+
+        return loss, {self.name: loss}
+
 # -----------------------------------------------------------------------------------------
 # Hyperparameters (edit these directly, no CLI flags needed)
 # -----------------------------------------------------------------------------------------
@@ -217,6 +273,7 @@ WEIGHT_IPTM_LOSS_FUNCTION = 0.025 # Weight of the iptm loss function in the tota
 WEIGHT_PTM_ENERGY_LOSS_FUNCTION = 0.025 # Weight of the ptm energy loss function in the total/composite loss
 WEIGHT_PLDDT_LOSS_FUNCTION = 0.025 # Weight of the plddt loss function in the total/composite loss
 WEIGHT_ANTI_HELIX_LOSS_FUNCTION = 0.1 # Weight of the anti-helix loss function (penalizes excess alpha-helical content, encourages mixed secondary structure) in the total/composite loss
+WEIGHT_SHEET_BIAS_LOSS_FUNCTION = 0.5 # Weight of the sheet bias loss function (rewards beta-sheet ladder contact pattern) in the total/composite loss; loss in [0, inf) ~5-15 for no sheets, ~0 for sheets
 WEIGHT_FIRST_MOTIF_DISTOGRAM_LOSS_FUNCTION = 0.1 # Weight of the motif distogram loss function in the total/composite loss
 WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION = 3.0 # Weight of the motif rmsd loss function in the total/composite loss
 WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION = 0.1
@@ -296,7 +353,8 @@ structure_prediction_loss = ((WEIGHT_BINDER_CONTACT_LOSS_FUNCTION * sp.BinderTar
                              + (WEIGHT_IPTM_LOSS_FUNCTION * sp.IPTMLoss()) 
                              + (WEIGHT_PTM_ENERGY_LOSS_FUNCTION * sp.pTMEnergy()) 
                              + (WEIGHT_PLDDT_LOSS_FUNCTION * sp.PLDDTLoss())
-                             + (WEIGHT_ANTI_HELIX_LOSS_FUNCTION * AntiHelixLoss()))
+                             + (WEIGHT_ANTI_HELIX_LOSS_FUNCTION * AntiHelixLoss())
+                             + (WEIGHT_SHEET_BIAS_LOSS_FUNCTION * SheetBiasLoss()))
 # 6.2, define motif-specific loss functions for each motif
 motif_first_loss = ((WEIGHT_FIRST_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_first, motif_first_indices)) + (WEIGHT_FIRST_MOTIF_RMSD_LOSS_FUNCTION * JointMotifRMSDLoss(motif_ca_coords_first, motif_first_indices, motif_ca_coords_second, motif_second_indices)))
 motif_second_loss = ((WEIGHT_SECOND_MOTIF_DISTOGRAM_LOSS_FUNCTION * MotifDistogramCE(motif_distogram_second, motif_second_indices)) + (WEIGHT_SECOND_MOTIF_RMSD_LOSS_FUNCTION * JointMotifRMSDLoss(motif_ca_coords_second, motif_second_indices, motif_ca_coords_first, motif_first_indices)))
