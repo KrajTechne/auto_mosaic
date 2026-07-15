@@ -35,8 +35,9 @@ from mosaic.common import TOKENS
 #-------------------------------------------------------------------------
 # Configuration 
 #-------------------------------------------------------------------------
-MAX_OPTIMIZER_STEPS = 100
-CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "autoresearch")
+MAX_OPTIMIZER_STEPS = 165
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CACHE_DIR = os.path.join(BASE_DIR, "cache")
 DATA_DIR = os.path.join(CACHE_DIR, "data")
 PATH_INPUT_STRUCTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gopher_alpha_snake.pdb")
 CHAIN_MOTIF = {
@@ -117,6 +118,18 @@ def generate_template_motif_annotation(chain_motif: dict, path_input_structure: 
     atom_array_motif.res_id[:] = motif_atom_res_id
 
     return atom_array_motif
+
+def generate_template_target_annotation(path_input_structure: str, chain: str = "C"):
+    """
+    Goal is to extract the target coordinates and annotation from the original structure complex and have it as context during hallucination
+    This will result in a template structure where the target coordinates are provided alongside the binder
+
+    Function will generate the correct atom_array_target annotation for the target and must be merged with other motif's annotation if present
+    """
+    atom_array_complex = extract_atom_array(path_input_structure)
+    atom_array_chain_target = atom_array_complex[atom_array_complex.chain_id == chain]
+    atom_array_chain_target.chain_id[:] = "B" # Broadcast "B" chain id to all atoms in the target
+    return atom_array_chain_target
 
 def extract_gemmi_chain(atom_array_template, desired_chain: str = "A"):
     """
