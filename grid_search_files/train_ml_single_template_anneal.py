@@ -3,6 +3,14 @@ Autoresearch pretraining script adapted to Motif Scaffolding. Single-GPU, single
 Consolidated from review of Escalante Bio's Mosaic Database & Sergey Ovchinikov's ColabDesign (AF2 Gradient Backpropagation Design)
 Usage: uv run train.py
 """
+# Add in ghost package of boto3 to avoid running into boto3 errors
+import sys, types, importlib.machinery
+
+if "boto3" not in sys.modules:
+    _boto3 = types.ModuleType("boto3")
+    _boto3.__spec__ = importlib.machinery.ModuleSpec("boto3", loader=None)
+    _boto3.__version__ = "1.0.0"
+    sys.modules["boto3"] = _boto3
 
 import os
 os.environ['PYTORCH_ALLOC_CONF'] = "expandable_segments:True"
@@ -39,8 +47,6 @@ torch.cuda.init()
 import mosaic
 from mosaic.proteinmpnn.mpnn import load_mpnn_sol
 from mosaic.models.boltz2 import Boltz2
-from mosaic.models.esmfold2 import ESMFold2Full
-from mosaic.losses.esmc import ESMCPseudoPerplexity, load_esmc
 from mosaic.common import LossTerm
 from mosaic.structure_prediction import StructureModelOutput
 import mosaic.losses.structure_prediction as sp
@@ -981,10 +987,9 @@ def evaluate_optimized_pssm(pssm_optimized, model_boltz, CHAIN_MOTIF, DATA_DIR):
     print(f"For Design Iteration: {design_iteration}")
     print(" ")  # Add empty space after output header and is also used to separate individual struc_model outputs
     # 1. Predict Structure via Boltz2
-    rmsd_d_boltz, iptm_boltz, plddt_boltz = evaluate_optimized_structure(struc_model = model_boltz, seq_pssm= pssm_optimized, motif_id_pos= CHAIN_MOTIF, design_iteration = design_iteration, model_name = "Boltz2")
+    rmsd_d_boltz, iptm_boltz, plddt_boltz = evaluate_optimized_structure(seq_pssm= pssm_optimized, motif_id_pos= CHAIN_MOTIF, design_iteration = design_iteration, model_name = "Boltz2", struc_model = model_boltz)
     # 2. Predict Structure via ESMFold2
-    model_esm2 = ESMFold2Full()
-    rmsd_d_esmfold, iptm_esmfold, plddt_esmfold = evaluate_optimized_structure(struc_model= model_esm2,seq_pssm= pssm_optimized,motif_id_pos= CHAIN_MOTIF, design_iteration = design_iteration, model_name= "ESMFold2")
+    rmsd_d_esmfold, iptm_esmfold, plddt_esmfold = evaluate_optimized_structure(seq_pssm= pssm_optimized,motif_id_pos= CHAIN_MOTIF, design_iteration = design_iteration, model_name= "ESMFold2", struc_model= None)
     # 3. Compute harmonic means for each model's: Boltz2 and ESMFold2 metrics: (rmsd_d, iptm, plddt)
     struc_model_metrics = {'rmsd_d' : [rmsd_d_boltz, rmsd_d_esmfold],
                            'iptm' : [iptm_boltz, iptm_esmfold],
@@ -1022,6 +1027,7 @@ def main():
     parser.add_argument('--seed', type = int, default = 0, help = "Seed for PSSM initialization; reuse the same seed across a grid sweep for common-random-numbers comparability")
     parser.add_argument('--parent_run_id', type = str, default = None, help = "MLflow run id of the parent sweep run to nest this trial's run under")
     parser.add_argument('--result_path', type = str, default = None, help = "Path to write this trial's metrics as JSON, so a driver (e.g. an Optuna objective) can read back a score")
+    parser.add_argument('--trial_number', type = int, default = None, help = "Current MLflow experiment trial number")
     args = parser.parse_args()
     loss_fn_weights = args.loss_fn_weights
     print(f"loss_fn_weights: {loss_fn_weights}")
@@ -1053,7 +1059,10 @@ def main():
         for model_name in ("Boltz2", "ESMFold2"):
             pdb_path = os.path.join(DATA_DIR, f"{model_name}_structure_{design_iteration}.pdb")
             if os.path.exists(pdb_path):
-                mlflow.log_artifact(pdb_path)
+                mlflow.log_artifact(pdb_path, artifact_path = f"success/trial_{args.trial_number}")
+                print("Logged pdb file as an artifact on MLFlow")
+                os.remove(pdb_path)
+                print("Removed pdb file from local workspace")
 
         # 5. Hand the score back to whatever process launched this trial (e.g. an Optuna objective)
         if args.result_path is not None:

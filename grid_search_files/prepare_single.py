@@ -26,7 +26,9 @@ import sklearn.metrics
 from sklearn.metrics.pairwise import pairwise_distances
 from mosaic.structure_prediction import TargetChain
 from mosaic.common import TOKENS
-
+import sys
+sys.path.append("/Workspace/Users/karthik.raj@bio-techne.com")
+from ScoringPhysics.RunESMFold2 import esmfold2_predict_analyze
 # ------------------------------------------------------------------------
 # Constants (fixed, do not modify)
 #-----------------------------------------------------------------------
@@ -196,7 +198,7 @@ def compute_composite_score(motif_rmsd, structure_iptm: float, binder_plddt: flo
     print("-" * 50)
     return composite_score
 
-def evaluate_optimized_structure(struc_model, seq_pssm, motif_id_pos: dict, design_iteration: int, model_name:str, recycling_steps: int = 10, sampling_steps: int = 150):
+def evaluate_optimized_structure(seq_pssm, motif_id_pos: dict, design_iteration: int, model_name:str, struc_model = None, recycling_steps: int = 10, sampling_steps: int = 150):
     """
     Evaluates the optimized structure by calculating the following metrics:
     1. Motif RMSD for each motif
@@ -204,33 +206,51 @@ def evaluate_optimized_structure(struc_model, seq_pssm, motif_id_pos: dict, desi
     3. Structure PLDDT
     """
     # 1. Convert pssm into seq
+    pdb_save_folder = os.path.join(DATA_DIR, "binder_structures")
+    if not os.path.exists(pdb_save_folder):
+        os.makedirs(pdb_save_folder)
+    else:
+        print("Folder Storing All Designed PDBs Exists")
     seq_tokenized = seq_pssm.argmax(-1)
     seq_binder = "".join(TOKENS[i] for i in seq_tokenized)
-    # 3. Predict Boltz Structure
+    seed = 11
+    # 2. Predict Boltz Structure
     if model_name == "Boltz2":
-        # 2. Create features for Boltz Complex Structure Prediction
+        # 1. Create features for Boltz Complex Structure Prediction
         struc_model_features, struc_model_writer = struc_model.target_only_features(
             chains = [TargetChain(sequence = seq_binder, use_msa = False),
                       TargetChain(sequence = SEQ_TARGET, use_msa = True),
                       ]
             )
-        pred = struc_model.predict(PSSM = seq_pssm, features = struc_model_features, writer = struc_model_writer, key = jax.random.key(11))
+        pred = struc_model.predict(PSSM = seq_pssm, features = struc_model_features, writer = struc_model_writer, key = jax.random.key(seed))
+        # 2. Save outputted gemmi structure to file and open up as a Biotite atom array
+        designed_structure = pred.st
+        path_designed_structure = os.path.join(pdb_save_folder, f"{model_name}_structure_{design_iteration}.pdb")
+        with open(path_designed_structure, "w") as f:
+            f.write(designed_structure.make_pdb_string())
+        designed_array = extract_atom_array(path_designed_structure)
+
+        # Extract pLDDT & iptm from the Boltz Structure
+        structure_iptm = pred.iptm
+        binder_plddt = pred.plddt[:len(seq_binder)].mean()
+    # 2. Predict ESMFold2 Structure
     elif model_name == "ESMFold2":
-        # 2. Create features for ESMFold2 Complex Structure Prediction
-        struc_model_features, struc_model_writer = struc_model.target_only_features(
-            chains = [TargetChain(sequence = seq_binder, use_msa = False),
-                      TargetChain(sequence = SEQ_TARGET, use_msa = False),
-                      ]
-            )
-        pred = struc_model.predict(PSSM = seq_pssm, features = struc_model_features, writer = struc_model_writer, key = jax.random.key(11),
-                                   recycling_steps = recycling_steps, sampling_steps = sampling_steps)
-    # 4. Save outputted gemmi structure to file and open up as a Biotite atom array
-    designed_structure = pred.st
-    path_designed_structure = os.path.join(DATA_DIR, f"{model_name}_structure_{design_iteration}.pdb")
-    with open(path_designed_structure, "w") as f:
-        f.write(designed_structure.make_pdb_string())
-    designed_array = extract_atom_array(path_designed_structure)
-    # 5. Calculate Motif RMSD for each motif
+        # Define Initial Parameters for Generating ESMFold2 Predictions
+        seq_list = [seq_binder, SEQ_TARGET]
+        msa_options = ['empty', '']
+        design_name = f"{model_name}_structure_{design_iteration}"
+        # 2. Run ESMFold2 & Returns metrics for every predicted structure for given design 
+        df_metrics = esmfold2_predict_analyze(design_name = design_name, model_name = model_name, 
+                                              seq_list = seq_list, volume_save_path= pdb_save_folder, msa_options= msa_options,
+                                              desired_epitope_residues = [], ligand = ['[Mg+2]'], seed = seed, num_models = 1)
+        path_designed_structure = df_metrics['path_structure'].iloc[0]
+        designed_array = extract_atom_array(path_designed_structure)
+        structure_iptm = df_metrics['iptm'].iloc[0]
+        binder_plddt = df_metrics['plddt'].iloc[0]
+    else:
+        raise ValueError(f"Model {model_name} not supported")
+
+    # 3. Calculate Motif RMSD for each motif
     motif_rmsd_dict = {}
     for motif_id, motif_res_pos in motif_id_pos.items():
         motif_coords_native_ca = np.load(os.path.join(DATA_DIR, f"motif_ca_coords_{motif_id}.npy"))
@@ -238,10 +258,7 @@ def evaluate_optimized_structure(struc_model, seq_pssm, motif_id_pos: dict, desi
         motif_rmsd = calculate_motif_rmsd(designed_array = designed_array, motif_res_pos = motif_coords_designed_res_pos,
                                           motif_coords_native= motif_coords_native_ca)
         motif_rmsd_dict[motif_id] = motif_rmsd
-    # 6. Calculate Structure IPTM
-    structure_iptm = pred.iptm
-    # 7. Calculate Structure PLDDT
-    binder_plddt = pred.plddt[:len(seq_binder)].mean()
+    
     # 8. Display Metrics for Agent to interpret and decide next step:
     print(f"Validation conducted by {model_name}:")
     print(f"You have Designed Binder Sequence: {seq_binder}")
